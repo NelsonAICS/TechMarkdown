@@ -1,0 +1,67 @@
+/* 主菜单栏 */
+"File" = "文件";
+"Edit" = "编辑";
+"View" = "视图";
+"Window" = "窗口";
+"Help" = "帮助";
+
+/* 文件菜单 */
+"New" = "新建";
+"Open..." = "打开...";
+"Open Recent" = "最近打开";
+"Close" = "关闭";
+"Save" = "保存";
+"Duplicate" = "复制";
+"Rename..." = "重命名...";
+"Move To..." = "移动到...";
+"Revert To..." = "恢复到...";
+"Share" = "共享";
+"Page Setup..." = "页面设置...";
+"Print..." = "打印...";
+
+/* 编辑菜单 */
+"Undo" = "撤销";
+"Redo" = "重做";
+"Cut" = "剪切";
+"Copy" = "拷贝";
+"Paste" = "粘贴";
+"Paste and Match Style" = "粘贴并匹配样式";
+"Delete" = "删除";
+"Select All" = "全选";
+"Find" = "查找";
+"Find..." = "查找...";
+"Find Next" = "查找下一个";
+"Find Previous" = "查找上一个";
+"Use Selection for Find" = "使用所选内容查找";
+"Jump to Selection" = "跳转到所选内容";
+"Spelling and Grammar" = "拼写和语法";
+"Substitutions" = "替换";
+"Transformations" = "转换";
+"Speech" = "语音";
+"Start Dictation..." = "开始听写...";
+"Emoji & Symbols" = "表情与符号";
+
+/* 视图菜单 */
+"Show Toolbar" = "显示工具栏";
+"Customize Toolbar..." = "自定义工具栏...";
+"Enter Full Screen" = "进入全屏幕";
+
+/* 窗口菜单 */
+"Minimize" = "最小化";
+"Zoom" = "缩放";
+"Tile Window to Left of Screen" = "将窗口拼贴到屏幕左侧";
+"Tile Window to Right of Screen" = "将窗口拼贴到屏幕右侧";
+"Replace Tiled Window" = "替换拼贴窗口";
+"Show All Tabs" = "显示所有标签页";
+"Bring All to Front" = "前置全部窗口";
+
+/* 帮助菜单 */
+"TechMarkdown Help" = "TechMarkdown 帮助";
+
+/* 通用 */
+"About TechMarkdown" = "关于 TechMarkdown";
+"Preferences..." = "偏好设置...";
+"Hide TechMarkdown" = "隐藏 TechMarkdown";
+"Hide Others" = "隐藏其他";
+"Show All" = "显示全部";
+"Quit TechMarkdown" = "退出 TechMarkdown";

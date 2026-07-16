@@ -1,0 +1,53 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Swift Package Manager / Xcode build output
+.build/
+.swiftpm/
+DerivedData/
+build/
+*.xcuserstate
+**/xcuserdata/
+*.moved-aside
+
+# Local logs, caches, and temporary files
+logs/
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+*.sb-*
+.cache/
+
+# Local databases and runtime state
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+*.db
+
+# Environment files, credentials, and signing material
+.env
+.env.*
+!.env.example
+.envrc
+*.pem
+*.key
+*.p8
+*.p12
+*.mobileprovision
+Secrets.*
+*.secrets.*
+
+# Local AI-agent workspace metadata
+.codex/
+.agents/
+.claude/
+
+# Third-party/community skills are not part of the app runtime yet.
+# Keep them local until licensing, permissions, and secrets are audited.
+skills/

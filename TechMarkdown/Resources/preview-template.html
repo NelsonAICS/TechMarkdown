@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TechMarkdown Preview</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <link id="hljs-theme" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css">
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-tertiary: #334155;
+            --bg-code: #0b1221;
+            --text-primary: #f8fafc;
+            --text-secondary: #cbd5e1;
+            --text-muted: #94a3b8;
+            --accent: #7DA481;
+            --accent-secondary: #5B88C3;
+            --border: rgba(148, 163, 184, 0.15);
+            --radius: 10px;
+            --ann-highlight: #DFCB91;
+            --ann-active: #E09191;
+        }
+        body.light-theme {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f8fafc;
+            --bg-tertiary: #f1f5f9;
+            --bg-code: #f1f5f9;
+            --text-primary: #0f172a;
+            --text-secondary: #334155;
+            --text-muted: #64748b;
+            --accent: #5B88C3;
+            --accent-secondary: #7DA481;
+            --border: rgba(15, 23, 42, 0.10);
+            --ann-highlight: #C4A85E;
+            --ann-active: #C97A7A;
+        }
+        * { box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            margin: 0;
+            padding: 32px 40px;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+            font-size: 15px;
+            line-height: 1.7;
+            color: var(--text-primary);
+            background: var(--bg-primary);
+            transition: background 0.25s ease, color 0.25s ease;
+        }
+        #content { max-width: 820px; margin: 0 auto; }
+        body.html-source-mode { padding: 0; }
+        body.html-source-mode #content { max-width: none; margin: 0; width: 100%; }
+        h1, h2, h3, h4, h5, h6 {
+            font-weight: 700;
+            line-height: 1.25;
+            margin: 1.8em 0 0.6em;
+            color: var(--text-primary);
+            letter-spacing: -0.01em;
+            scroll-margin-top: 24px;
+        }
+        h1 { font-size: 2em; padding-bottom: 0.25em; border-bottom: 1px solid var(--border); }
+        h2 { font-size: 1.55em; border-bottom: 1px solid var(--border); padding-bottom: 0.2em; }
+        h3 { font-size: 1.25em; color: var(--accent); }
+        h4 { font-size: 1.1em; color: var(--accent-secondary); }
+        p { margin: 0.9em 0; color: var(--text-secondary); }
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        strong { color: var(--text-primary); font-weight: 700; }
+        em { color: var(--accent-secondary); font-style: italic; }
+        del { color: var(--text-muted); text-decoration: line-through; }
+        code {
+            font-family: "SF Mono", "Fira Code", Menlo, Consolas, monospace;
+            background: var(--bg-tertiary);
+            color: var(--accent);
+            padding: 2px 6px;
+            border-radius: 6px;
+            font-size: 0.9em;
+        }
+        pre {
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px 20px;
+            overflow-x: auto;
+            margin: 1.1em 0;
+        }
+        pre code { background: transparent; color: var(--text-primary); border: none; padding: 0; font-size: 0.85em; }
+        blockquote {
+            margin: 1.1em 0;
+            padding: 12px 20px;
+            border-left: 3px solid var(--accent);
+            background: var(--bg-secondary);
+            border-radius: 0 var(--radius) var(--radius) 0;
+        }
+        blockquote p { margin: 0.5em 0; color: var(--text-secondary); }
+        ul, ol { margin: 0.9em 0; padding-left: 1.8em; color: var(--text-secondary); }
+        li { margin: 0.35em 0; }
+        li::marker { color: var(--accent); }
+        table { width: 100%; border-collapse: collapse; margin: 1.2em 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+        th { background: var(--bg-tertiary); color: var(--accent); font-weight: 600; padding: 10px 14px; text-align: left; }
+        td { padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--text-secondary); }
+        tr:last-child td { border-bottom: none; }
+        hr { border: none; height: 1px; background: linear-gradient(90deg, transparent, var(--border), transparent); margin: 2em 0; }
+        img { max-width: 100%; border-radius: var(--radius); margin: 1em 0; }
+        .error-box { color: #ef4444; background: rgba(239, 68, 68, 0.1); padding: 12px; border-radius: var(--radius); font-family: monospace; font-size: 0.85em; }
+        .annotation-highlight {
+            color: inherit;
+            background: rgba(223, 203, 145, 0.16);
+            border-bottom: 2px solid rgba(223, 203, 145, 0.82);
+            border-radius: 3px;
+            padding: 0 2px;
+            cursor: pointer;
+            transition: background 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+        }
+        .annotation-highlight:hover {
+            background: rgba(223, 203, 145, 0.24);
+            border-bottom-color: rgba(223, 203, 145, 1);
+        }
+        .annotation-highlight.active {
+            background: rgba(223, 203, 145, 0.30);
+            border-bottom-color: rgba(223, 203, 145, 1);
+            box-shadow: 0 0 0 3px rgba(223, 203, 145, 0.14);
+        }
+        body.light-theme .annotation-highlight {
+            color: var(--text-primary);
+            background: linear-gradient(180deg, rgba(196, 168, 94, 0.30) 0%, rgba(196, 168, 94, 0.12) 100%);
+            border-bottom-color: rgba(201, 122, 122, 0.60);
+        }
+        body.light-theme .annotation-highlight:hover {
+            background: linear-gradient(180deg, rgba(196, 168, 94, 0.44) 0%, rgba(196, 168, 94, 0.20) 100%);
+            border-bottom-color: rgba(201, 122, 122, 0.85);
+        }
+        body.light-theme .annotation-highlight.active {
+            background: linear-gradient(180deg, rgba(201, 122, 122, 0.28) 0%, rgba(201, 122, 122, 0.12) 100%);
+            border-bottom-color: rgba(201, 122, 122, 1.0);
+            box-shadow: 0 0 0 3px rgba(201, 122, 122, 0.15);
+        }
+        .find-match {
+            background: rgba(245, 158, 11, 0.35);
+            border-radius: 3px;
+            padding: 0 1px;
+        }
+        .find-match-active {
+            background: rgba(245, 158, 11, 0.80);
+            box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.95);
+            border-radius: 3px;
+            padding: 0 1px;
+        }
+        body.light-theme .find-match {
+            background: rgba(217, 119, 6, 0.30);
+        }
+        body.light-theme .find-match-active {
+            background: rgba(217, 119, 6, 0.75);
+            box-shadow: 0 0 0 1px rgba(217, 119, 6, 0.90);
+        }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--bg-tertiary); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+    </style>
+</head>
+<body class="dark-theme">
+    <div id="content"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/core.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/javascript.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/python.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/swift.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/bash.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/json.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/cpp.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/tex.min.js"></script>
+
+    <script>
+        // 与 Swift 端 String.markdownHeadingSlug() 保持一致的 slug 算法
+        function slugify(text) {
+            if (!text) return "";
+            return text.toString()
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-')
+                .replace(/^-+|-+$/g, '');
+        }
+
+        const headingSlugs = new Map();
+        function headingSlug(rawText) {
+            const base = slugify(rawText.replace(/^#+\s*/, ''));
+            if (!base) return "heading";
+            let count = headingSlugs.get(base) || 0;
+            count += 1;
+            headingSlugs.set(base, count);
+            return count === 1 ? base : base + "-" + count;
+        }
+
+        // 极简 fallback Markdown → HTML，用于 CDN 不可用的情况
+        function simpleMarkdownToHTML(text) {
+            if (!text) return "";
+            let html = text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;");
+            html = html.replace(/```([\w]*)\n([\s\S]*?)```/g, function(_, lang, code) {
+                return '<pre><code>' + code.trim() + '</code></pre>';
+            });
+            html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+            function makeHeading(tag, content) {
+                return '<' + tag + ' id="' + headingSlug(content) + '">' + content + '</' + tag + '>';
+            }
+            html = html.replace(/^###### (.*$)/gim, function(_, m) { return makeHeading('h6', m); });
+            html = html.replace(/^##### (.*$)/gim, function(_, m) { return makeHeading('h5', m); });
+            html = html.replace(/^#### (.*$)/gim, function(_, m) { return makeHeading('h4', m); });
+            html = html.replace(/^### (.*$)/gim, function(_, m) { return makeHeading('h3', m); });
+            html = html.replace(/^## (.*$)/gim, function(_, m) { return makeHeading('h2', m); });
+            html = html.replace(/^# (.*$)/gim, function(_, m) { return makeHeading('h1', m); });
+            html = html.replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>');
+            html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+            html = html.replace(/~~(.*?)~~/g, '<del>$1</del>');
+            html = html.replace(/^\> (.*$)/gim, '<blockquote>$1</blockquote>');
+            html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img alt="$1" src="$2">');
+            html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+            html = html.replace(/^---$/gim, '<hr>');
+            html = html.replace(/^[-*] (.*$)/gim, '<li>$1</li>');
+            html = html.replace(/^\d+\. (.*$)/gim, '<li>$1</li>');
+            html = html.split(/\n{2,}/).map(function(block) {
+                block = block.trim();
+                if (!block) return "";
+                if (/^<(h[1-6]|pre|blockquote|hr|ul|ol|li)/.test(block)) return block;
+                return '<p>' + block.replace(/\n/g, '<br>') + '</p>';
+            }).join("\n");
+            return html;
+        }
+
+        function renderLaTeXSource(text) {
+            document.body.classList.remove('html-source-mode');
+            try {
+                const escaped = (text || "")
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;");
+                document.getElementById('content').innerHTML = '<pre><code class="language-latex">' + escaped + '</code></pre>';
+
+                if (typeof renderMathInElement !== 'undefined') {
+                    renderMathInElement(document.getElementById('content'), {
+                        delimiters: [
+                            {left: '$$', right: '$$', display: true},
+                            {left: '$', right: '$', display: false},
+                            {left: '\\[', right: '\\]', display: true},
+                            {left: '\\(', right: '\\)', display: false}
+                        ],
+                        throwOnError: false,
+                        trust: true
+                    });
+                }
+
+                if (typeof hljs !== 'undefined') {
+                    document.querySelectorAll('pre code').forEach(function(block) {
+                        hljs.highlightElement(block);
+                    });
+                }
+            } catch (e) {
+                document.getElementById('content').innerHTML = '<div class="error-box">' + e.toString() + '</div>';
+            }
+        }
+
+        function renderHTMLSource(text) {
+            document.body.classList.add('html-source-mode');
+            try {
+                document.getElementById('content').innerHTML = text || "";
+            } catch (e) {
+                document.getElementById('content').innerHTML = '<div class="error-box">' + e.toString() + '</div>';
+            }
+        }
+
+        function renderMarkdown(text) {
+            document.body.classList.remove('html-source-mode');
+            headingSlugs.clear();
+            try {
+                let html = "";
+                if (typeof marked !== 'undefined') {
+                    const renderer = new marked.Renderer();
+                    renderer.heading = function(text, level, raw) {
+                        const id = headingSlug(raw || '');
+                        return '<h' + level + ' id="' + id + '">' + text + '</h' + level + '>';
+                    };
+                    marked.setOptions({ renderer: renderer, gfm: true, breaks: false });
+                    html = marked.parse(text || "");
+                } else {
+                    html = simpleMarkdownToHTML(text || "");
+                }
+                document.getElementById('content').innerHTML = html;
+
+                if (typeof renderMathInElement !== 'undefined') {
+                    renderMathInElement(document.getElementById('content'), {
+                        delimiters: [
+                            {left: '$$', right: '$$', display: true},
+                            {left: '$', right: '$', display: false},
+                            {left: '\\[', right: '\\]', display: true},
+                            {left: '\\(', right: '\\)', display: false}
+                        ],
+                        throwOnError: false,
+                        trust: true
+                    });
+                }
+
+                if (typeof hljs !== 'undefined') {
+                    document.querySelectorAll('pre code').forEach(function(block) {
+                        hljs.highlightElement(block);
+                    });
+                }
+            } catch (e) {
+                document.getElementById('content').innerHTML = '<div class="error-box">' + e.toString() + '</div>';
+            }
+        }
+
+        function setTheme(theme) {
+            document.body.className = theme + '-theme';
+            const hljsLink = document.getElementById('hljs-theme');
+            if (hljsLink) {
+                hljsLink.href = theme === 'dark'
+                    ? 'https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css'
+                    : 'https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css';
+            }
+        }
+
+        function setZoom(scale) {
+            document.body.style.zoom = scale;
+        }
+
+        function scrollToHeading(id, anchorText) {
+            if (!id && !anchorText) return;
+            let el = null;
+            if (id) {
+                el = document.getElementById(id);
+            }
+            // 兜底 1：用目录链接的显示文本反查 heading
+            if (!el && anchorText) {
+                const anchorSlug = slugify(anchorText);
+                el = document.getElementById(anchorSlug);
+            }
+            // 兜底 2：遍历 heading，支持手写 slug 与 heading 文本的多种匹配
+            if (!el) {
+                const allHeadings = document.querySelectorAll('h1,h2,h3,h4,h5,h6');
+                const candidates = [];
+                if (id) candidates.push(id, slugify(id));
+                if (anchorText) candidates.push(slugify(anchorText));
+                for (let i = 0; i < allHeadings.length; i++) {
+                    const h = allHeadings[i];
+                    const headingSlug = slugify(h.textContent || '');
+                    if (candidates.some(c => c && (headingSlug === c || h.id === c))) {
+                        el = h;
+                        break;
+                    }
+                }
+            }
+            if (el) {
+                el.scrollIntoView({ behavior: 'auto', block: 'start' });
+            }
+        }
+
+        function linkExtension(href) {
+            const m = href.match(/\.([^.?#\\/]+)(?:[?#]|$)/);
+            return m ? m[1].toLowerCase() : '';
+        }
+
+        function postLinkMessage(href, type) {
+            if (window.webkit && window.webkit.messageHandlers.previewLinkHandler) {
+                window.webkit.messageHandlers.previewLinkHandler.postMessage({ href: href, type: type });
+            }
+        }
+
+        // 链接点击处理：锚点跳转 / 本地文件新开标签 / 外部链接用系统打开
+        document.addEventListener('click', function(e) {
+            let target = e.target;
+            while (target && target.nodeType !== 1) {
+                target = target.parentNode;
+            }
+            if (!target || !target.closest) return;
+            const a = target.closest('a[href]');
+            if (!a) return;
+
+            const raw = a.getAttribute('href') || '';
+
+            // 1. 同一页锚点
+            if (raw.startsWith('#')) {
+                e.preventDefault();
+                const anchor = decodeURIComponent(raw.substring(1));
+                scrollToHeading(slugify(anchor), a.textContent || '');
+                return;
+            }
+
+            const schemeMatch = raw.match(/^([a-z][a-z0-9+.-]*):/i);
+            if (schemeMatch) {
+                const scheme = schemeMatch[1].toLowerCase();
+                // 外部链接：交给 App 用默认浏览器打开
+                if (scheme === 'http' || scheme === 'https' || scheme === 'mailto' || scheme === 'tel') {
+                    e.preventDefault();
+                    postLinkMessage(raw, 'external');
+                    return;
+                }
+                // file:// 或其它本地 scheme：交给 App 解析
+                if (scheme === 'file') {
+                    e.preventDefault();
+                    postLinkMessage(raw, 'file');
+                    return;
+                }
+                return;
+            }
+
+            // 2. 相对路径的本地文件链接
+            const ext = linkExtension(raw);
+            if (['html', 'htm', 'md', 'markdown', 'tex', 'txt'].indexOf(ext) !== -1) {
+                e.preventDefault();
+                postLinkMessage(raw, 'file');
+            }
+        });
+
+        window.addEventListener('hashchange', function() {
+            scrollToHeading(slugify(location.hash.slice(1)), null);
+        });
+
+        function clearFindHighlights() {
+            document.querySelectorAll('.find-match, .find-match-active').forEach(function(el) {
+                const parent = el.parentNode;
+                if (parent) {
+                    parent.replaceChild(document.createTextNode(el.textContent || ''), el);
+                    parent.normalize();
+                }
+            });
+            window._findQuery = '';
+            window._findIndex = 0;
+            window._findTotal = 0;
+        }
+
+        function escapeRegExp(text) {
+            return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+
+        function shouldSkipFindNode(node) {
+            if (!node.parentElement) return true;
+            return node.parentElement.closest('.annotation-highlight, .find-match, .find-match-active, script, style') !== null;
+        }
+
+        function wrapMatchesInNode(node, regex) {
+            const results = [];
+            let currentNode = node;
+            let text = currentNode.textContent || '';
+            let match;
+            regex.lastIndex = 0;
+            while ((match = regex.exec(text)) !== null) {
+                const start = match.index;
+                const end = start + match[0].length;
+                const before = text.substring(0, start);
+                const matched = text.substring(start, end);
+                const after = text.substring(end);
+
+                const parent = currentNode.parentNode;
+                if (!parent) break;
+
+                const beforeNode = document.createTextNode(before);
+                const span = document.createElement('span');
+                span.className = 'find-match';
+                span.textContent = matched;
+                const afterNode = document.createTextNode(after);
+
+                parent.insertBefore(beforeNode, currentNode);
+                parent.insertBefore(span, currentNode);
+                parent.insertBefore(afterNode, currentNode);
+                parent.removeChild(currentNode);
+                parent.normalize();
+
+                results.push(span);
+
+                currentNode = afterNode;
+                text = after;
+                regex.lastIndex = 0;
+                if (!text) break;
+            }
+            return results;
+        }
+
+        function rebuildFindMatches(query) {
+            clearFindHighlights();
+            if (!query) return [];
+            const container = document.getElementById('content');
+            if (!container) return [];
+
+            const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+            const textNodes = [];
+            let node;
+            while ((node = walker.nextNode())) {
+                if (!shouldSkipFindNode(node) && (node.textContent || '').length > 0) {
+                    textNodes.push(node);
+                }
+            }
+
+            const regex = new RegExp(escapeRegExp(query), 'gi');
+            const matches = [];
+            textNodes.forEach(function(n) {
+                const spans = wrapMatchesInNode(n, regex);
+                matches.push.apply(matches, spans);
+            });
+            return matches;
+        }
+
+        function findText(query, backwards) {
+            const normalized = query || '';
+            let matches = document.querySelectorAll('.find-match, .find-match-active');
+            let needsRebuild = matches.length === 0 || window._findQuery !== normalized;
+            if (needsRebuild) {
+                matches = rebuildFindMatches(normalized);
+                window._findQuery = normalized;
+                window._findTotal = matches.length;
+                window._findIndex = backwards ? Math.max(0, matches.length - 1) : 0;
+            } else {
+                matches = Array.prototype.slice.call(matches);
+                const total = matches.length;
+                if (total === 0) {
+                    window._findIndex = 0;
+                } else if (backwards) {
+                    window._findIndex = (window._findIndex - 1 + total) % total;
+                } else {
+                    window._findIndex = (window._findIndex + 1) % total;
+                }
+            }
+
+            const total = matches.length;
+            matches.forEach(function(el, i) {
+                el.className = (i === window._findIndex) ? 'find-match-active' : 'find-match';
+            });
+
+            const active = matches[window._findIndex];
+            if (active) {
+                active.scrollIntoView({ behavior: 'auto', block: 'center' });
+            }
+
+            return {
+                current: total > 0 ? window._findIndex + 1 : 0,
+                total: total
+            };
+        }
+
+        function clearAnnotationHighlights() {
+            document.querySelectorAll('.annotation-highlight').forEach(function(el) {
+                const parent = el.parentNode;
+                if (parent) {
+                    parent.replaceChild(document.createTextNode(el.textContent || ''), el);
+                    parent.normalize();
+                }
+            });
+        }
+
+        function wrapTextInNode(node, ann, lineText) {
+            if (node.parentElement && node.parentElement.closest('.annotation-highlight')) return false;
+            const raw = node.textContent || '';
+            const query = lineText.replace(/\s+/g, ' ');
+            const normalized = raw.replace(/\s+/g, ' ');
+            if (normalized.indexOf(query) < 0) return false;
+
+            let start = -1, end = -1;
+            const minLen = Math.max(1, lineText.length - 3);
+            const maxLen = Math.min(raw.length, lineText.length + 6);
+            outer:
+            for (let i = 0; i <= raw.length - minLen; i++) {
+                for (let len = minLen; len <= maxLen && i + len <= raw.length; len++) {
+                    const seg = raw.substring(i, i + len).replace(/\s+/g, ' ').trim();
+                    if (seg === query) {
+                        start = i;
+                        end = i + len;
+                        break outer;
+                    }
+                }
+            }
+            if (start < 0) return false;
+
+            const range = document.createRange();
+            range.setStart(node, start);
+            range.setEnd(node, end);
+            const mark = document.createElement('mark');
+            mark.className = 'annotation-highlight';
+            mark.dataset.id = ann.id;
+            mark.title = ann.text;
+            mark.textContent = raw.substring(start, end);
+            try {
+                range.surroundContents(mark);
+                return true;
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function highlightAnnotations(annotations) {
+            clearAnnotationHighlights();
+            if (!annotations || annotations.length === 0) return;
+            const container = document.getElementById('content');
+            if (!container) return;
+            annotations.forEach(function(ann) {
+                const text = (ann.selectedText || '').trim();
+                if (!text) return;
+                const lines = text.split(/\r?\n/).map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; });
+                if (lines.length === 0) return;
+
+                // 多行批注：逐行高亮第一个匹配；单行批注：只高亮一次
+                lines.forEach(function(line) {
+                    if (!line) return;
+                    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+                    let node;
+                    while ((node = walker.nextNode())) {
+                        if (wrapTextInNode(node, ann, line)) break;
+                    }
+                });
+            });
+        }
+
+        function scrollToAnnotation(id) {
+            document.querySelectorAll('.annotation-highlight.active').forEach(function(el) {
+                el.classList.remove('active');
+            });
+            const el = document.querySelector('.annotation-highlight[data-id="' + id + '"]');
+            if (!el) return;
+            el.scrollIntoView({ behavior: 'auto', block: 'center' });
+            el.classList.add('active');
+            setTimeout(function() {
+                el.classList.remove('active');
+            }, 1200);
+        }
+
+        document.addEventListener('click', function(event) {
+            const target = event.target && event.target.closest
+                ? event.target.closest('.annotation-highlight')
+                : null;
+            if (!target || !window.webkit || !window.webkit.messageHandlers.previewAnnotationHandler) return;
+            window.webkit.messageHandlers.previewAnnotationHandler.postMessage({
+                id: target.dataset.id || ''
+            });
+        });
+
+        // 双击预览区，把最近标题回传给 Swift
+        document.addEventListener('dblclick', function(e) {
+            let target = e.target;
+            while (target && target.nodeType !== 1) {
+                target = target.parentNode;
+            }
+            let heading = target && target.closest ? target.closest('h1,h2,h3,h4,h5,h6') : null;
+            if (!heading) {
+                let el = e.target;
+                while (el && el !== document.body) {
+                    let prev = el.previousElementSibling;
+                    while (prev) {
+                        if (/^H[1-6]$/i.test(prev.tagName)) {
+                            heading = prev;
+                            break;
+                        }
+                        prev = prev.previousElementSibling;
+                    }
+                    if (heading) break;
+                    el = el.parentElement;
+                }
+            }
+            if (heading && window.webkit && window.webkit.messageHandlers.previewDoubleClickHandler) {
+                window.webkit.messageHandlers.previewDoubleClickHandler.postMessage({
+                    id: heading.id,
+                    heading: heading.textContent || ''
+                });
+            }
+        });
+
+        renderMarkdown("");
+    </script>
+</body>
+</html>
