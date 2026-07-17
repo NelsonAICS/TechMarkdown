@@ -2,6 +2,20 @@
 
 一款 macOS 原生 Markdown 预览 / 编辑器，采用科技风 UI，支持双栏编辑、实时预览、LaTeX 公式、代码高亮、主题切换、页面缩放、文件对比，以及 **AI Agent 智能助手**。
 
+## 界面展示
+
+### 引导页面
+
+<p align="center">
+  <img src="./演示/引导页面.png" alt="TechMarkdown 引导页面" width="100%">
+</p>
+
+### 主界面
+
+<p align="center">
+  <img src="./演示/主界面.png" alt="TechMarkdown 主界面" width="100%">
+</p>
+
 ## 功能特性
 
 - **原生 macOS 应用**：基于 SwiftUI + AppKit + WKWebView 构建
