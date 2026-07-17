@@ -24,7 +24,7 @@
 - Xcode 15.0 或更高版本（推荐，用于界面预览和打包）
 - 需要网络连接以调用大模型 API 并加载 KaTeX、marked、highlight.js 等预览渲染库
 
-## 如何运行
+## 如何运行与安装
 
 ### 方式一：Swift Package Manager（推荐用于快速编译验证）
 
@@ -44,6 +44,35 @@ open TechMarkdown.xcodeproj
 然后在 Xcode 中选择目标设备为 **My Mac**，点击运行按钮（⌘R）。
 
 > 首次运行若提示需要网络权限，请允许，因为预览渲染依赖 CDN 加载 KaTeX、marked、highlight.js。
+
+### 安装到“应用程序”
+
+1. 使用 Xcode 打开 `TechMarkdown.xcodeproj`，运行目标选择 **My Mac**。
+2. 在 `Product → Scheme → Edit Scheme… → Run → Build Configuration` 中选择 **Release**。
+3. 执行 `Product → Build`（⌘B）。
+4. 在 Xcode 左侧的 **Products** 中找到 `TechMarkdown.app`，右键选择 **Show in Finder**。
+5. 将 `TechMarkdown.app` 拖入 Finder 的 **应用程序（Applications）** 文件夹。
+6. 第一次打开若被 macOS 拦截，进入 **系统设置 → 隐私与安全性**，确认打开该应用。
+
+也可以在终端中构建 Release 版本：
+
+```bash
+cd /Users/nelson/Desktop/TechMarkdown
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  xcodebuild -project TechMarkdown.xcodeproj \
+  -scheme TechMarkdown \
+  -configuration Release \
+  -destination 'platform=macOS' \
+  -derivedDataPath build build
+```
+
+构建结果位于：
+
+```text
+build/Build/Products/Release/TechMarkdown.app
+```
+
+当前工程使用本地开发签名，适合在自己的 Mac 上安装。若要分发给其他用户，需要先把 `com.example.TechMarkdown` 更换为正式 Bundle ID，并完成 Developer ID 签名和 Apple 公证。
 
 ## 如何设置为 `.md` 默认打开方式
 

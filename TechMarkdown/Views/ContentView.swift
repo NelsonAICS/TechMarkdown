@@ -165,7 +165,10 @@ struct ContentView: View {
                 if let url = fileURL {
                     MemoryService.shared.recordFileInteraction(path: url.path, text: document.text)
                 }
-                agent.currentFilePath = fileURL?.path
+                agent.updateCurrentFile(
+                    path: fileURL?.path,
+                    documentText: document.text
+                )
             }
             .onChange(of: document.text) { _, newValue in
                 documentState.text = newValue
@@ -178,23 +181,19 @@ struct ContentView: View {
                 documentState.format = document.format
                 documentState.currentFileURL = newURL
                 updateDocumentTabURL(newURL)
-                agent.currentFilePath = newURL?.path
+                agent.updateCurrentFile(
+                    path: newURL?.path,
+                    documentText: document.text
+                )
             }
             .onReceive(NotificationCenter.default.publisher(for: .openFileInNewTab)) { notification in
                 if let url = notification.object as? URL {
                     openTab(for: url)
                 }
             }
-            .onChange(of: editorPreviewMode) { _, newMode in
+            .onChange(of: editorPreviewMode) { _, _ in
                 if showFindBar {
-                    switch newMode {
-                    case .editorOnly:
-                        findTarget = .editor
-                    case .previewOnly:
-                        findTarget = .preview
-                    case .both:
-                        break
-                    }
+                    synchronizeFindTarget()
                     postFindQueryChanged()
                 }
             }
@@ -293,15 +292,31 @@ struct ContentView: View {
                 previewTabHeader(for: tab)
             }
 
-            if selectedTab?.isDocument == true {
-                editorTopBar
-                if showFindBar {
-                    findBar
-                }
-                editorPreviewArea
-            } else if let tab = selectedTab {
-                previewTabContent(tab: tab)
+            workspaceTopBar
+
+            if showFindBar {
+                findBar
             }
+
+            activeTabContent
+        }
+    }
+
+    @ViewBuilder
+    private var activeTabContent: some View {
+        if selectedTab?.isDocument == true {
+            if document.format == .pdf {
+                PDFWorkspaceView(
+                    fileURL: fileURL,
+                    data: document.originalData,
+                    themeManager: themeManager,
+                    onAddToConversation: { agent.addSelectedTextSnippet($0) }
+                )
+            } else {
+                editorPreviewArea
+            }
+        } else if let tab = selectedTab {
+            previewTabContent(tab: tab)
         }
     }
 
@@ -335,7 +350,7 @@ struct ContentView: View {
 
             Spacer()
 
-            if let file = tab.projectFile {
+            if let file = tab.projectFile, tab.format != .pdf {
                 Button {
                     openInNewWindowForEdit(file)
                 } label: {
@@ -362,18 +377,43 @@ struct ContentView: View {
     }
 
     private func previewTabContent(tab: DocumentTab) -> some View {
-        ZStack {
-            PreviewView(themeManager: themeManager, onAddToConversation: { text in
-                agent.addSelectedTextSnippet(text)
-            })
-                .environmentObject(tab.state)
-            TableOfContentsView(themeManager: themeManager)
-                .environmentObject(tab.state)
+        Group {
+            if tab.format == .pdf {
+                PDFWorkspaceView(
+                    fileURL: tab.fileURL,
+                    data: nil,
+                    themeManager: themeManager,
+                    onAddToConversation: { agent.addSelectedTextSnippet($0) }
+                )
+            } else {
+                ZStack {
+                    PreviewView(themeManager: themeManager, onAddToConversation: { text in
+                        agent.addSelectedTextSnippet(text)
+                    })
+                        .environmentObject(tab.state)
+                    TableOfContentsView(themeManager: themeManager)
+                        .environmentObject(tab.state)
+                }
+            }
         }
     }
 
     private var aiSidebar: some View {
-        AISidebarView(agent: agent, documentText: $document.text, themeManager: themeManager)
+        AISidebarView(agent: agent, documentText: activeDocumentText, themeManager: themeManager)
+    }
+
+    /// AI 始终跟随当前标签页。PDF 与普通预览均为只读，避免修改建议误写回源文件。
+    private var activeDocumentText: Binding<String> {
+        Binding(
+            get: {
+                guard let tab = selectedTab, !tab.isDocument else { return document.text }
+                return tab.state.text
+            },
+            set: { newValue in
+                guard selectedTab?.isDocument == true, document.format != .pdf else { return }
+                document.text = newValue
+            }
+        )
     }
 
     // MARK: - Custom Split Layout
@@ -709,16 +749,29 @@ struct ContentView: View {
 
     // MARK: - Top Bar
 
-    private var editorTopBar: some View {
+    /// 始终跟随当前标签页显示的工作区工具栏。
+    /// 文件能力不同只影响左侧模式和保存/导出按钮，不影响查找、主题、AI 与缩放。
+    private var workspaceTopBar: some View {
         HStack(spacing: 12) {
-            viewModeButtons
+            if isEditableDocumentTab {
+                viewModeButtons
+            } else {
+                readOnlyContextBadge
+            }
 
             Spacer()
 
-            HStack(spacing: 10) {
-                saveButton
+            HStack(spacing: 6) {
+                if isEditableDocumentTab {
+                    saveButton
+                }
                 findButton
-                exportPDFButton
+                if isEditableDocumentTab {
+                    exportPDFButton
+                }
+
+                toolbarDivider
+
                 aiToggleButton
                 themeToggleButton
                 zoomGroup
@@ -733,6 +786,56 @@ struct ContentView: View {
                 .foregroundColor(themeManager.border),
             alignment: .bottom
         )
+    }
+
+    private var isEditableDocumentTab: Bool {
+        selectedTab?.isDocument == true && document.format != .pdf
+    }
+
+    private var activeFormat: DocumentFormat {
+        guard let tab = selectedTab else { return document.format }
+        return tab.isDocument ? document.format : tab.format
+    }
+
+    private var readOnlyContextBadge: some View {
+        Label(readOnlyContextTitle, systemImage: activeFormatIcon)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(themeManager.textSecondary)
+            .padding(.horizontal, 10)
+            .frame(height: 28)
+            .background(
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(themeManager.backgroundTertiary.opacity(0.72))
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 7)
+                    .stroke(themeManager.border, lineWidth: 1)
+            }
+    }
+
+    private var readOnlyContextTitle: String {
+        switch activeFormat {
+        case .pdf: return "PDF 阅读"
+        case .markdown: return "Markdown 预览"
+        case .latex: return "LaTeX 预览"
+        case .html: return "HTML 预览"
+        }
+    }
+
+    private var activeFormatIcon: String {
+        switch activeFormat {
+        case .pdf: return "doc.richtext"
+        case .markdown: return "doc.plaintext"
+        case .latex: return "doc.text"
+        case .html: return "safari"
+        }
+    }
+
+    private var toolbarDivider: some View {
+        Rectangle()
+            .fill(themeManager.border)
+            .frame(width: 1, height: 20)
+            .padding(.horizontal, 2)
     }
 
     private var viewModeButtons: some View {
@@ -753,15 +856,21 @@ struct ContentView: View {
                     }
                     .foregroundColor(
                         selected
-                            ? (themeManager.theme == .dark ? themeManager.backgroundPrimary : themeManager.textPrimary)
+                            ? themeManager.controlSelectedForeground
                             : themeManager.textSecondary
                     )
                     .padding(.horizontal, 12)
                     .padding(.vertical, 5)
                     .background(
                         RoundedRectangle(cornerRadius: 6)
-                            .fill(selected ? themeManager.accent : Color.clear)
+                            .fill(selected ? themeManager.controlSelectedBackground : Color.clear)
                     )
+                    .overlay {
+                        if selected {
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(themeManager.controlSelectedBorder, lineWidth: 1)
+                        }
+                    }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -780,24 +889,27 @@ struct ContentView: View {
     }
 
     private var saveButton: some View {
-        Button(action: saveDocument) {
-            Image(systemName: "square.and.arrow.down")
-                .foregroundColor(themeManager.textSecondary)
-        }
-        .help("保存 (⌘S)")
+        WorkspaceToolbarButton(
+            icon: "square.and.arrow.down",
+            help: "保存 (⌘S)",
+            themeManager: themeManager,
+            action: saveDocument
+        )
     }
 
     private var findButton: some View {
-        Button(action: toggleFindBar) {
-            Image(systemName: showFindBar ? "magnifyingglass.circle.fill" : "magnifyingglass")
-                .foregroundColor(themeManager.textSecondary)
-        }
-        .help("查找 (⌘F)")
+        WorkspaceToolbarButton(
+            icon: "magnifyingglass",
+            help: "查找 (⌘F)",
+            isActive: showFindBar,
+            themeManager: themeManager,
+            action: toggleFindBar
+        )
     }
 
     private var findBar: some View {
         HStack(spacing: 12) {
-            if editorPreviewMode == .both {
+            if isEditableDocumentTab && editorPreviewMode == .both {
                 Picker("", selection: $findTarget) {
                     ForEach(FindTarget.allCases) { target in
                         Text(target.label).tag(target)
@@ -879,36 +991,42 @@ struct ContentView: View {
     }
 
     private var exportPDFButton: some View {
-        Button(action: exportPDF) {
-            Image(systemName: document.format == .latex ? "doc.text" : "arrow.up.doc")
-                .foregroundColor(themeManager.textSecondary)
-        }
-        .help(document.format == .latex ? "编译并预览 PDF" : "导出 PDF")
+        WorkspaceToolbarButton(
+            icon: document.format == .latex ? "doc.text" : "arrow.up.doc",
+            help: document.format == .latex ? "编译并预览 PDF" : "导出 PDF",
+            themeManager: themeManager,
+            action: exportPDF
+        )
     }
 
     private var aiToggleButton: some View {
-        Button(action: { showAI.toggle() }) {
-            Image(systemName: showAI ? "brain.head.profile.fill" : "brain.head.profile")
-                .foregroundColor(showAI ? themeManager.accent : themeManager.textMuted)
-        }
-        .help("切换 AI 侧边栏")
+        WorkspaceToolbarButton(
+            icon: "brain.head.profile",
+            help: "切换 AI 侧边栏",
+            isActive: showAI,
+            themeManager: themeManager,
+            action: { showAI.toggle() }
+        )
     }
 
     private var themeToggleButton: some View {
-        Button(action: { themeManager.toggleTheme() }) {
-            Image(systemName: themeManager.theme.icon)
-                .foregroundColor(themeManager.textSecondary)
-        }
-        .help("切换主题")
+        WorkspaceToolbarButton(
+            icon: themeManager.theme.icon,
+            help: "切换主题",
+            themeManager: themeManager,
+            action: { themeManager.toggleTheme() }
+        )
     }
 
     private var zoomGroup: some View {
         HStack(spacing: 4) {
-            Button(action: { themeManager.applyZoom(-0.1) }) {
-                Image(systemName: "minus.magnifyingglass")
-                    .foregroundColor(themeManager.textSecondary)
-            }
-            .help("缩小预览")
+            WorkspaceToolbarButton(
+                icon: "minus.magnifyingglass",
+                help: "缩小预览",
+                compact: true,
+                themeManager: themeManager,
+                action: { themeManager.applyZoom(-0.1) }
+            )
 
             Text("\(Int(themeManager.previewZoom * 100))%")
                 .font(.system(size: 12, weight: .medium))
@@ -916,12 +1034,20 @@ struct ContentView: View {
                 .foregroundColor(themeManager.textSecondary)
                 .frame(width: 42)
 
-            Button(action: { themeManager.applyZoom(0.1) }) {
-                Image(systemName: "plus.magnifyingglass")
-                    .foregroundColor(themeManager.textSecondary)
-            }
-            .help("放大预览")
+            WorkspaceToolbarButton(
+                icon: "plus.magnifyingglass",
+                help: "放大预览",
+                compact: true,
+                themeManager: themeManager,
+                action: { themeManager.applyZoom(0.1) }
+            )
         }
+        .padding(.horizontal, 3)
+        .padding(.vertical, 2)
+        .background(
+            RoundedRectangle(cornerRadius: 7)
+                .fill(themeManager.backgroundTertiary.opacity(0.55))
+        )
     }
 
     private var wordCount: Int {
@@ -952,6 +1078,8 @@ struct ContentView: View {
             DocumentPDFExporter.exportHTML(text: document.text, theme: themeManager.theme, zoom: themeManager.previewZoom)
         case .markdown:
             DocumentPDFExporter.exportMarkdown(text: document.text, theme: themeManager.theme, zoom: themeManager.previewZoom)
+        case .pdf:
+            break
         }
     }
 
@@ -1000,6 +1128,7 @@ struct ContentView: View {
     }
 
     private func saveDocument() {
+        guard document.format != .pdf else { return }
         if let doc = currentNSDocument() {
             reconcileDocumentFileDate()
             doc.save(nil)
@@ -1012,6 +1141,7 @@ struct ContentView: View {
     }
 
     private func saveDocumentAs() {
+        guard document.format != .pdf else { return }
         if let doc = currentNSDocument() {
             doc.saveAs(nil)
         } else {
@@ -1026,6 +1156,7 @@ struct ContentView: View {
             case .latex: return ("tex", [.latex, .plainText])
             case .html:  return ("html", [.html, .plainText])
             case .markdown: return ("md", [.markdown, .plainText])
+            case .pdf: return ("pdf", [.pdf])
             }
         }()
         panel.nameFieldStringValue = (fileURL?.deletingPathExtension().lastPathComponent ?? "未命名") + ".\(defaultExt)"
@@ -1077,6 +1208,9 @@ struct ContentView: View {
         if let tab = selectedTab {
             previewFile = tab.isDocument ? nil : tab.projectFile
         }
+        synchronizeFindTarget()
+        postFindQueryChanged()
+        syncActiveAIContext()
     }
 
     private func closeTab(_ id: UUID) {
@@ -1148,7 +1282,12 @@ struct ContentView: View {
 
         Task {
             do {
-                let content = try await ProjectManager.shared.readFile(at: file.path, maxLength: 5_000_000)
+                let content: String
+                if file.url.pathExtension.lowercased() == "pdf" {
+                    content = try await DocumentRetrievalService.shared.extractText(from: file.path, maxLength: 5_000_000)
+                } else {
+                    content = try await ProjectManager.shared.readFile(at: file.path, maxLength: 5_000_000)
+                }
                 await MainActor.run {
                     if let idx = tabs.firstIndex(where: { $0.id == tab.id }) {
                         tabs[idx].state.text = content
@@ -1157,6 +1296,7 @@ struct ContentView: View {
                         tabs[idx].isLoading = false
                     }
                     MemoryService.shared.recordFileInteraction(path: file.url.path, text: content)
+                    if selectedTabID == tab.id { syncActiveAIContext() }
                 }
             } catch {
                 await MainActor.run {
@@ -1182,7 +1322,12 @@ struct ContentView: View {
 
         Task {
             do {
-                let content = try await ProjectManager.shared.readFile(at: url.path, maxLength: 5_000_000)
+                let content: String
+                if url.pathExtension.lowercased() == "pdf" {
+                    content = try await DocumentRetrievalService.shared.extractText(from: url.path, maxLength: 5_000_000)
+                } else {
+                    content = try await ProjectManager.shared.readFile(at: url.path, maxLength: 5_000_000)
+                }
                 await MainActor.run {
                     if let idx = tabs.firstIndex(where: { $0.id == tab.id }) {
                         tabs[idx].state.text = content
@@ -1191,6 +1336,7 @@ struct ContentView: View {
                         tabs[idx].isLoading = false
                     }
                     MemoryService.shared.recordFileInteraction(path: url.path, text: content)
+                    if selectedTabID == tab.id { syncActiveAIContext() }
                 }
             } catch {
                 await MainActor.run {
@@ -1212,6 +1358,17 @@ struct ContentView: View {
             depth: 0,
             contentType: UTType(filenameExtension: url.pathExtension)
         )
+    }
+
+    private func syncActiveAIContext() {
+        guard let tab = selectedTab else { return }
+        let text = tab.isDocument ? document.text : tab.state.text
+        let url = tab.isDocument ? fileURL : tab.fileURL
+        let format = tab.isDocument ? document.format : tab.format
+        documentState.text = text
+        documentState.currentFileURL = url
+        documentState.format = format
+        agent.updateCurrentFile(path: url?.path, documentText: text)
     }
 
     // MARK: - 从项目浏览器打开文件
@@ -1257,17 +1414,25 @@ struct ContentView: View {
             showFindBar.toggle()
         }
         if showFindBar {
-            switch editorPreviewMode {
-            case .editorOnly:
-                findTarget = .editor
-            case .previewOnly:
-                findTarget = .preview
-            case .both:
-                break
-            }
+            synchronizeFindTarget()
             postFindQueryChanged()
         } else {
             NotificationCenter.default.post(name: .findBarClosed, object: nil)
+        }
+    }
+
+    private func synchronizeFindTarget() {
+        guard isEditableDocumentTab else {
+            findTarget = .preview
+            return
+        }
+        switch editorPreviewMode {
+        case .editorOnly:
+            findTarget = .editor
+        case .previewOnly:
+            findTarget = .preview
+        case .both:
+            break
         }
     }
 
@@ -1340,6 +1505,48 @@ struct ContentView: View {
         } else {
             agent.connectionStatus = "未配置 API"
         }
+    }
+}
+
+// MARK: - Workspace Toolbar
+
+struct WorkspaceToolbarButton: View {
+    let icon: String
+    let help: String
+    var isActive = false
+    var compact = false
+    @Bindable var themeManager: ThemeManager
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: isActive ? .semibold : .regular))
+                .foregroundStyle(isActive ? themeManager.controlSelectedForeground : themeManager.textSecondary)
+                .frame(width: compact ? 26 : 30, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(buttonBackground)
+                )
+                .overlay {
+                    if isActive {
+                        RoundedRectangle(cornerRadius: 7)
+                            .stroke(themeManager.controlSelectedBorder, lineWidth: 1)
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .onHover { isHovered = $0 }
+    }
+
+    private var buttonBackground: Color {
+        if isActive { return themeManager.controlSelectedBackground }
+        if isHovered { return themeManager.backgroundTertiary.opacity(0.82) }
+        return Color.clear
     }
 }
 

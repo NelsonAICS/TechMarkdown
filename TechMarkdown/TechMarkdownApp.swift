@@ -2,8 +2,34 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
+enum ApplicationIconProvider {
+    /// 直接读取应用包内由 AppIcon 资源集生成的 icns，避免 NSAlert 在图标缓存尚未就绪时显示系统占位图。
+    static func load(from bundle: Bundle = .main) -> NSImage? {
+        if let url = bundle.url(forResource: "AppIcon", withExtension: "icns"),
+           let image = NSImage(contentsOf: url) {
+            image.isTemplate = false
+            return image
+        }
+
+        // 开发预览或特殊测试宿主可能没有独立 icns，此时再使用应用包图标作为后备。
+        let fallback = NSWorkspace.shared.icon(forFile: bundle.bundlePath)
+        fallback.isTemplate = false
+        return fallback
+    }
+
+    @MainActor
+    static func installAsApplicationIcon() {
+        guard let image = load() else { return }
+        NSApplication.shared.applicationIconImage = image
+    }
+}
+
 class TechMarkdownAppDelegate: NSObject, NSApplicationDelegate {
     private let launchWindowSize = NSSize(width: 980, height: 720)
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        ApplicationIconProvider.installAsApplicationIcon()
+    }
 
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
         // 阻止 DocumentGroup 在启动时自动创建空白文档或弹出打开面板；
@@ -12,6 +38,7 @@ class TechMarkdownAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        ApplicationIconProvider.installAsApplicationIcon()
         DispatchQueue.main.async {
             self.resizeLaunchWindowIfNeeded()
         }
@@ -228,7 +255,7 @@ struct LaunchScreenContainer: View {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.plainText, .markdown, .latex, .html]
+        panel.allowedContentTypes = [.plainText, .markdown, .latex, .html, .pdf]
         panel.prompt = "打开"
 
         guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
@@ -462,6 +489,7 @@ struct LaunchWindowCloseHandler: NSViewRepresentable {
             alert.messageText = "退出 TechMarkdown？"
             alert.informativeText = "你可以选择最小化到 Dock，或完全退出应用。"
             alert.alertStyle = .informational
+            alert.icon = ApplicationIconProvider.load()
             alert.addButton(withTitle: "退出")
             alert.addButton(withTitle: "最小化到 Dock")
             alert.addButton(withTitle: "取消")

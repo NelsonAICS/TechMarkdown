@@ -38,11 +38,20 @@ final class MarkdownDocumentTests: XCTestCase {
         XCTAssertTrue(template.contains("</html>"))
     }
 
-    func testReadableContentTypesContainsMarkdownAndLaTeXAndHTML() {
+    func testReadableContentTypesContainsMarkdownLaTeXHTMLAndPDF() {
         let types = MarkdownDocument.readableContentTypes
         XCTAssertTrue(types.contains(.markdown))
         XCTAssertTrue(types.contains(.latex))
         XCTAssertTrue(types.contains(.html))
         XCTAssertTrue(types.contains(.plainText))
+        XCTAssertTrue(types.contains(.pdf))
+    }
+
+    func testPDFDocumentPreservesOriginalBytes() {
+        let bytes = Data("not-a-valid-pdf".utf8)
+        let doc = MarkdownDocument(data: bytes, format: .pdf)
+        XCTAssertEqual(doc.format, .pdf)
+        XCTAssertEqual(doc.encodedData(), bytes)
+        XCTAssertEqual(doc.text, "")
     }
 }

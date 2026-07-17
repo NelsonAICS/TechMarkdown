@@ -1,5 +1,16 @@
 import Foundation
 
+/// PDF 批注的只读锚点。坐标使用 PDF 页面坐标系，源 PDF 不会被改写。
+struct PDFAnnotationAnchor: Codable, Equatable, Sendable {
+    let pageIndex: Int
+    let bounds: [CGRect]
+
+    init(pageIndex: Int, bounds: [CGRect] = []) {
+        self.pageIndex = max(0, pageIndex)
+        self.bounds = bounds
+    }
+}
+
 enum AnnotationSource: String, Codable, Equatable, Sendable {
     case editor
     case preview
@@ -66,6 +77,8 @@ struct Annotation: Identifiable, Codable, Equatable, Sendable {
     var context: String
     /// 创建时选区在原文中的位置快照
     var rangeSnapshot: AnnotationRangeSnapshot?
+    /// PDF 页码与选区矩形；普通文本批注为空。
+    var pdfAnchor: PDFAnnotationAnchor?
     var createdAt: Date
     var updatedAt: Date
     var resolved: Bool
@@ -76,6 +89,7 @@ struct Annotation: Identifiable, Codable, Equatable, Sendable {
         selectedText: String = "",
         context: String = "",
         rangeSnapshot: AnnotationRangeSnapshot? = nil,
+        pdfAnchor: PDFAnnotationAnchor? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         resolved: Bool = false
@@ -85,6 +99,7 @@ struct Annotation: Identifiable, Codable, Equatable, Sendable {
         self.selectedText = selectedText
         self.context = context
         self.rangeSnapshot = rangeSnapshot
+        self.pdfAnchor = pdfAnchor
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.resolved = resolved

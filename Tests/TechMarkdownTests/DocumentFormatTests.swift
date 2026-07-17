@@ -20,8 +20,12 @@ final class DocumentFormatTests: XCTestCase {
     }
 
     func testUnknownExtensionReturnsNil() {
-        XCTAssertNil(DocumentFormat.forURL(URL(fileURLWithPath: "/tmp/a.pdf")))
         XCTAssertNil(DocumentFormat.forURL(URL(fileURLWithPath: "/tmp/a")))
+    }
+
+    func testPDFExtension() {
+        XCTAssertEqual(DocumentFormat.forURL(URL(fileURLWithPath: "/tmp/a.pdf")), .pdf)
+        XCTAssertEqual(DocumentFormat.forURL(URL(fileURLWithPath: "/tmp/a.PDF")), .pdf)
     }
 
     func testCaseInsensitivity() {
@@ -31,9 +35,10 @@ final class DocumentFormatTests: XCTestCase {
     }
 
     func testAllCasesAreExhaustive() {
-        XCTAssertEqual(DocumentFormat.allCases.count, 3)
+        XCTAssertEqual(DocumentFormat.allCases.count, 4)
         XCTAssertTrue(DocumentFormat.allCases.contains(.markdown))
         XCTAssertTrue(DocumentFormat.allCases.contains(.latex))
         XCTAssertTrue(DocumentFormat.allCases.contains(.html))
+        XCTAssertTrue(DocumentFormat.allCases.contains(.pdf))
     }
 }

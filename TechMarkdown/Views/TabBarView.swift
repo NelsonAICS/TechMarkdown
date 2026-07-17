@@ -133,6 +133,7 @@ struct TabBarView: View {
         case .html: return "safari"
         case .latex: return "doc.text"
         case .markdown: return "doc.plaintext"
+        case .pdf: return "doc.richtext"
         }
     }
 }

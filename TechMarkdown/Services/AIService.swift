@@ -12,6 +12,7 @@ final class AIService {
         tools: [ToolDefinition],
         configuration: AIProviderConfiguration,
         apiKey: String,
+        currentFilePath: String? = nil,
         annotations: [Annotation] = []
     ) async throws -> AIChatResponse {
         let body = try makeRequestBody(
@@ -22,6 +23,7 @@ final class AIService {
             tools: tools,
             configuration: configuration,
             stream: false,
+            currentFilePath: currentFilePath,
             annotations: annotations
         )
         let data = try await performRequest(body: body, configuration: configuration, apiKey: apiKey)
@@ -40,6 +42,7 @@ final class AIService {
         threadId: String,
         runId: String,
         messageId: String,
+        currentFilePath: String? = nil,
         annotations: [Annotation] = []
     ) -> AsyncThrowingStream<AGUIEvent, Error> {
         AsyncThrowingStream { continuation in
@@ -53,6 +56,7 @@ final class AIService {
                         tools: tools,
                         configuration: configuration,
                         stream: true,
+                        currentFilePath: currentFilePath,
                         annotations: annotations
                     )
                     
@@ -222,7 +226,7 @@ final class AIService {
         }
     }
     
-    private func makeRequestBody(
+    func makeRequestBody(
         messages: [ChatMessage],
         documentText: String,
         referencedFiles: [ReferencedFile],
@@ -230,20 +234,56 @@ final class AIService {
         tools: [ToolDefinition],
         configuration: AIProviderConfiguration,
         stream: Bool,
+        currentFilePath: String?,
         annotations: [Annotation] = []
     ) throws -> Data {
         var payloadMessages: [[String: Any]] = []
         
         var systemPrompt = configuration.systemPrompt
-        if !documentText.isEmpty {
-            systemPrompt += "\n\n当前文档内容：\n\(documentText)"
+        let includedReferences = referencedFiles.filter(\.isIncluded)
+        let lastUserText = messages.last(where: { $0.role == .user })?.content ?? ""
+        let contextResolution = AIContextResolver.resolve(
+            userText: lastUserText,
+            currentFilePath: currentFilePath,
+            referencedFiles: includedReferences
+        )
+        systemPrompt += """
+
+        <本轮上下文规则>
+        \(contextResolution.promptInstruction)
+        只依据实际提供的正文回答；无法从资料确认的内容要明确说明。
+        输出必须使用结构清晰的标准 Markdown：
+        - 标题、段落、列表分别独占行；
+        - 块与块之间保留空行；
+        - 不要把标题、编号、正文压缩在同一行；
+        - 长回答优先使用二级标题和项目列表。
+        </本轮上下文规则>
+        """
+
+        if currentFilePath?.lowercased().hasSuffix(".pdf") == true {
+            systemPrompt += """
+
+            <PDF只读规则>
+            当前文档是 PDF。可以阅读、总结、问答并结合页码批注分析，但不得调用文档修改工具，
+            不得声称已修改 PDF。若用户希望改写内容，只能输出独立建议或草稿。
+            </PDF只读规则>
+            """
         }
-        if !referencedFiles.isEmpty {
-            let fileContext = referencedFiles
-                .filter { $0.isIncluded }
-                .map { "文件: \($0.path)\n\($0.contentPreview)" }
+
+        if !documentText.isEmpty, contextResolution.focus != .referencedFiles {
+            systemPrompt += "\n\n<当前编辑文档>\n\(documentText)\n</当前编辑文档>"
+        }
+        if !includedReferences.isEmpty {
+            let fileContext = includedReferences
+                .map {
+                    """
+                    <引用文件 path="\($0.path)">
+                    \($0.contentPreview)
+                    </引用文件>
+                    """
+                }
                 .joined(separator: "\n---\n")
-            systemPrompt += "\n\n引用文件内容：\n\(fileContext)"
+            systemPrompt += "\n\n<用户主动附加的文件>\n\(fileContext)\n</用户主动附加的文件>"
         }
         if !selectedTextSnippets.isEmpty {
             let snippetsContext = selectedTextSnippets
@@ -270,7 +310,14 @@ final class AIService {
         let unresolvedAnnotations = annotations.filter { !$0.resolved }
         if !unresolvedAnnotations.isEmpty {
             let annotationContext = unresolvedAnnotations
-                .map { "- [\($0.createdAt.formatted())] \($0.text)" }
+                .map { annotation in
+                    let location = annotation.pdfAnchor.map { "PDF 第 \($0.pageIndex + 1) 页" }
+                        ?? annotation.context
+                    let selected = annotation.selectedText.isEmpty
+                        ? ""
+                        : "\n  关联原文：\(annotation.selectedText)"
+                    return "- [\(location)] \(annotation.text)\(selected)"
+                }
                 .joined(separator: "\n")
             systemPrompt += "\n\n当前文档批注（请优先根据这些批注优化内容）：\n\(annotationContext)"
         }
@@ -289,8 +336,11 @@ final class AIService {
             "temperature": configuration.temperature
         ]
         
-        if !tools.isEmpty {
-            body["tools"] = tools.map { $0.openAISchema }
+        let availableTools = currentFilePath?.lowercased().hasSuffix(".pdf") == true
+            ? tools.filter { $0.riskLevel != .documentProposal }
+            : tools
+        if !availableTools.isEmpty {
+            body["tools"] = availableTools.map { $0.openAISchema }
             body["tool_choice"] = "auto"
         }
         

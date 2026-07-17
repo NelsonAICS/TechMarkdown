@@ -77,6 +77,8 @@ final class AnnotationService {
         selectedText: String = "",
         context: String = "",
         rangeSnapshot: AnnotationRangeSnapshot? = nil,
+        pdfAnchor: PDFAnnotationAnchor? = nil,
+        allowOverlap: Bool = false,
         for path: String?
     ) -> Annotation? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -85,7 +87,7 @@ final class AnnotationService {
         guard let path, !path.isEmpty, !trimmed.isEmpty else { return nil }
 
         lock.lock()
-        if !selected.isEmpty,
+        if !allowOverlap, !selected.isEmpty,
            let overlap = storage[path]?.first(where: {
                Self.overlaps(
                    existing: $0,
@@ -102,7 +104,8 @@ final class AnnotationService {
             text: trimmed,
             selectedText: selected,
             context: normalizedContext,
-            rangeSnapshot: rangeSnapshot
+            rangeSnapshot: rangeSnapshot,
+            pdfAnchor: pdfAnchor
         )
         storage[path, default: []].append(annotation)
         let snapshot = storage

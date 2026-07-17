@@ -191,6 +191,7 @@ struct PreviewView: NSViewRepresentable {
             case .latex: renderer = "renderLaTeXSource"
             case .html: renderer = "renderHTMLSource"
             case .markdown: renderer = "renderMarkdown"
+            case .pdf: renderer = "renderMarkdown"
             }
             webView.evaluateJavaScript("\(renderer)('\(escaped)')") { [weak self] _, _ in
                 self?.applyAnnotations()

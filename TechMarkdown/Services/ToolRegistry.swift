@@ -11,6 +11,10 @@ final class ToolRegistry {
     var allDefinitions: [ToolDefinition] {
         Array(tools.values.map(\.definition))
     }
+
+    func containsTool(named name: String) -> Bool {
+        tools[name] != nil
+    }
     
     func register(_ tool: ToolExecutable) {
         tools[tool.definition.name] = tool

@@ -16,6 +16,7 @@ struct ChatMessage: Identifiable, Codable, Hashable {
     var timestamp: Date
     var referencedFiles: [ReferencedFile]
     var reasoningContent: String?
+    var runID: UUID?
     
     init(
         id: UUID = UUID(),
@@ -25,7 +26,8 @@ struct ChatMessage: Identifiable, Codable, Hashable {
         toolCallID: String? = nil,
         timestamp: Date = Date(),
         referencedFiles: [ReferencedFile] = [],
-        reasoningContent: String? = nil
+        reasoningContent: String? = nil,
+        runID: UUID? = nil
     ) {
         self.id = id
         self.role = role
@@ -35,6 +37,7 @@ struct ChatMessage: Identifiable, Codable, Hashable {
         self.timestamp = timestamp
         self.referencedFiles = referencedFiles
         self.reasoningContent = reasoningContent
+        self.runID = runID
     }
     
     var isUser: Bool { role == .user }
@@ -100,23 +103,55 @@ struct ToolCallFunction: Codable, Hashable {
     let arguments: String
 }
 
-struct PendingEdit: Identifiable {
-    let id = UUID()
+struct PendingEdit: Identifiable, Codable, Equatable {
+    let id: UUID
     var originalText: String
     var suggestedText: String
     var reason: String
     var hunks: [EditHunk] = []
+    var runID: UUID?
+    var createdAt: Date
+
+    init(
+        id: UUID = UUID(),
+        originalText: String,
+        suggestedText: String,
+        reason: String,
+        hunks: [EditHunk] = [],
+        runID: UUID? = nil,
+        createdAt: Date = Date()
+    ) {
+        self.id = id
+        self.originalText = originalText
+        self.suggestedText = suggestedText
+        self.reason = reason
+        self.hunks = hunks
+        self.runID = runID
+        self.createdAt = createdAt
+    }
 }
 
 /// AI 修改建议中的可独立应用/弃用的差异块。
-struct EditHunk: Identifiable, Equatable {
-    let id = UUID()
+struct EditHunk: Identifiable, Codable, Equatable {
+    let id: UUID
     /// 在 originalText 中的 1-based 起始行号
     var oldStart: Int
     /// 被替换/删除的原始行
     var oldLines: [String]
     /// 建议的新行
     var newLines: [String]
+
+    init(
+        id: UUID = UUID(),
+        oldStart: Int,
+        oldLines: [String],
+        newLines: [String]
+    ) {
+        self.id = id
+        self.oldStart = oldStart
+        self.oldLines = oldLines
+        self.newLines = newLines
+    }
 
     var oldCount: Int { oldLines.count }
     var newCount: Int { newLines.count }

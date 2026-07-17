@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import PDFKit
 
 extension UTType {
     static var markdown: UTType {
@@ -15,6 +16,7 @@ enum DocumentFormat: String, Codable, CaseIterable {
     case markdown
     case latex
     case html
+    case pdf
 
     static func forURL(_ url: URL) -> DocumentFormat? {
         let ext = url.pathExtension.lowercased()
@@ -22,6 +24,7 @@ enum DocumentFormat: String, Codable, CaseIterable {
         case "md", "markdown", "mkd": return .markdown
         case "tex", "latex": return .latex
         case "html", "htm": return .html
+        case "pdf": return .pdf
         default:
             return nil
         }
@@ -31,23 +34,34 @@ enum DocumentFormat: String, Codable, CaseIterable {
 struct MarkdownDocument: FileDocument {
     var text: String
     var format: DocumentFormat
+    /// PDF 保留原始二进制数据；`text` 只保存供检索和 AI 使用的提取文本。
+    /// UI 不会把提取文本写回 PDF。
+    var originalData: Data?
     
     init(text: String = "# 未命名文档\n\n开始输入 Markdown...", format: DocumentFormat = .markdown) {
         self.text = text
         self.format = format
+        self.originalData = nil
     }
 
     init(data: Data, format: DocumentFormat = .markdown) {
-        self.text = String(data: data, encoding: .utf8) ?? ""
+        if format == .pdf {
+            self.text = MarkdownDocument.extractPDFText(from: data)
+            self.originalData = data
+        } else {
+            self.text = String(data: data, encoding: .utf8) ?? ""
+            self.originalData = nil
+        }
         self.format = format
     }
     
-    static var readableContentTypes: [UTType] { [.plainText, .markdown, .latex, .html] }
+    static var readableContentTypes: [UTType] { [.plainText, .markdown, .latex, .html, .pdf] }
     static var writableContentTypes: [UTType] { [.markdown, .plainText, .latex, .html] }
     
     init(configuration: ReadConfiguration) throws {
         if let data = configuration.file.regularFileContents {
-            self.init(data: data)
+            let format: DocumentFormat = configuration.contentType.conforms(to: .pdf) ? .pdf : .markdown
+            self.init(data: data, format: format)
         } else {
             self.init(text: "")
         }
@@ -58,7 +72,18 @@ struct MarkdownDocument: FileDocument {
     }
 
     func encodedData() -> Data {
-        text.data(using: .utf8) ?? Data()
+        if format == .pdf, let originalData {
+            return originalData
+        }
+        return text.data(using: .utf8) ?? Data()
+    }
+
+    static func extractPDFText(from data: Data) -> String {
+        guard let pdf = PDFDocument(data: data) else { return "" }
+        return (0..<pdf.pageCount).compactMap { index in
+            guard let page = pdf.page(at: index) else { return nil }
+            return "--- 第 \(index + 1) 页 ---\n\(page.string ?? "")"
+        }.joined(separator: "\n\n")
     }
 }
 

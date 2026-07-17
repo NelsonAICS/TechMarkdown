@@ -87,6 +87,7 @@ struct AISidebarView: View {
                 )
             }
 
+            runtimeNotice
             messageList
                 .background(themeManager.backgroundPrimary)
 
@@ -117,16 +118,20 @@ struct AISidebarView: View {
             }
 
             // 主要操作
+            HeaderButton(icon: "square.and.pencil", help: "新建对话") {
+                startNewConversation()
+            }
+
             HeaderButton(icon: "clock.arrow.circlepath", help: "对话历史") {
                 showConversationHistory.toggle()
             }
             .sheet(isPresented: $showConversationHistory) {
-                ConversationHistoryView(agent: agent, themeManager: themeManager)
+                ConversationHistoryView(
+                    agent: agent,
+                    themeManager: themeManager,
+                    currentDocumentText: documentText
+                )
                     .frame(minWidth: 460, minHeight: 540)
-            }
-
-            HeaderButton(icon: "square.and.arrow.up", help: "导出对话") {
-                exportConversation()
             }
 
             HeaderButton(icon: "gearshape", help: "AI 设置") {
@@ -157,6 +162,12 @@ struct AISidebarView: View {
                     showingSkillPicker.toggle()
                 } label: {
                     Label("选择 Skill", systemImage: "wand.and.stars")
+                }
+
+                Button {
+                    exportConversation()
+                } label: {
+                    Label("导出对话", systemImage: "square.and.arrow.up")
                 }
 
                 Divider()
@@ -202,6 +213,13 @@ struct AISidebarView: View {
         )
     }
 
+    private func startNewConversation() {
+        agent.startNewConversation(documentText: documentText)
+        inputText = ""
+        selectedWorkspace = .conversation
+        showEventLog = false
+    }
+
     private var workspacePicker: some View {
         HStack(spacing: 4) {
             ForEach(SidebarWorkspace.allCases) { workspace in
@@ -228,15 +246,21 @@ struct AISidebarView: View {
                     }
                     .foregroundStyle(
                         isSelected
-                            ? (themeManager.theme == .dark ? themeManager.backgroundPrimary : themeManager.textPrimary)
+                            ? themeManager.controlSelectedForeground
                             : themeManager.textSecondary
                     )
                     .frame(maxWidth: .infinity)
                     .frame(height: 30)
                     .background(
                         RoundedRectangle(cornerRadius: 7)
-                            .fill(isSelected ? themeManager.accent : Color.clear)
+                            .fill(isSelected ? themeManager.controlSelectedBackground : Color.clear)
                     )
+                    .overlay {
+                        if isSelected {
+                            RoundedRectangle(cornerRadius: 7)
+                                .stroke(themeManager.controlSelectedBorder, lineWidth: 1)
+                        }
+                    }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -254,6 +278,45 @@ struct AISidebarView: View {
 
     // MARK: - Messages
 
+    @ViewBuilder
+    private var runtimeNotice: some View {
+        if agent.recoverableRun != nil || agent.contextNotice != nil {
+            HStack(alignment: .top, spacing: 9) {
+                Image(systemName: agent.recoverableRun == nil ? "doc.text.magnifyingglass" : "arrow.clockwise.circle.fill")
+                    .foregroundStyle(agent.recoverableRun == nil ? themeManager.accentSecondary : themeManager.warning)
+                    .padding(.top, 1)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(agent.recoverableRun == nil ? "上下文已更新" : "上次运行可以恢复")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(themeManager.textPrimary)
+                    Text(agent.contextNotice ?? "将从上次安全检查点继续，不会重复执行已完成的工具。")
+                        .font(.system(size: 10))
+                        .foregroundStyle(themeManager.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+
+                if agent.recoverableRun != nil {
+                    Button("恢复") {
+                        agent.resumeLastRun(documentText: documentText)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.mini)
+                }
+            }
+            .padding(10)
+            .background(themeManager.backgroundSecondary)
+            .overlay(
+                Rectangle()
+                    .frame(height: 1)
+                    .foregroundStyle(themeManager.border),
+                alignment: .bottom
+            )
+        }
+    }
+
     private var messageList: some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -265,6 +328,19 @@ struct AISidebarView: View {
                     ForEach(agent.messages.filter { $0.role != .tool }) { message in
                         MessageBubble(message: message, themeManager: themeManager)
                             .id(message.id)
+                    }
+
+                    if let run = agent.currentRun {
+                        AgentRunTimelineView(
+                            run: run,
+                            steps: agent.currentRunSteps,
+                            themeManager: themeManager,
+                            onStop: { agent.cancelRun() },
+                            onResume: {
+                                agent.resumeLastRun(documentText: documentText)
+                            }
+                        )
+                        .id(run.id)
                     }
 
                     if !agent.currentStreamingContent.isEmpty || !agent.currentStreamingReasoning.isEmpty {
@@ -303,9 +379,7 @@ struct AISidebarView: View {
                 }
             }
             .onChange(of: agent.currentStreamingContent) { _, _ in
-                withAnimation {
-                    proxy.scrollTo("streaming", anchor: .bottom)
-                }
+                proxy.scrollTo("streaming", anchor: .bottom)
             }
         }
     }
@@ -336,9 +410,14 @@ struct AISidebarView: View {
             if !agent.referencedFiles.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        Text("引用文件")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(themeManager.textSecondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("已选资料")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(themeManager.textSecondary)
+                            Text("发送时优先作为本轮分析对象")
+                                .font(.system(size: 9))
+                                .foregroundColor(themeManager.textMuted)
+                        }
                         Spacer()
                         Text("\(agent.referencedFiles.filter(\.isIncluded).count)/\(agent.referencedFiles.count)")
                             .font(.caption2)
@@ -980,7 +1059,7 @@ struct AISidebarView: View {
         )
         .fileImporter(
             isPresented: $showingFilePicker,
-            allowedContentTypes: [.plainText, .markdown, .latex, .html, .sourceCode, .data],
+            allowedContentTypes: [.plainText, .markdown, .latex, .html, .pdf, .sourceCode, .data],
             allowsMultipleSelection: true
         ) { result in
             handleFileSelection(result)
@@ -1105,9 +1184,7 @@ struct ReferencedFileChip: View {
                 .stroke(file.isIncluded ? themeManager.accent.opacity(0.25) : themeManager.border, lineWidth: 1)
         )
         .onTapGesture {
-            if let index = agent.referencedFiles.firstIndex(where: { $0.id == file.id }) {
-                agent.referencedFiles[index].isIncluded.toggle()
-            }
+            agent.toggleReferencedFile(id: file.id)
         }
     }
 }
@@ -1172,31 +1249,28 @@ struct MessageBubble: View {
                         .background(themeManager.accent.opacity(0.15))
                         .foregroundColor(themeManager.accent)
                         .cornerRadius(12)
+
+                    if !message.referencedFiles.isEmpty {
+                        MessageAttachmentSummary(
+                            files: message.referencedFiles,
+                            themeManager: themeManager
+                        )
+                    }
                 } else {
-                    let mdContent = markdownAttributedString(message.content.isEmpty ? "（无内容）" : message.content, theme: themeManager)
-                    Text(mdContent)
-                        .font(.system(size: 13))
-                        .lineSpacing(5)
-                        .padding(10)
+                    MarkdownMessageView(
+                        content: message.content.isEmpty ? "（无内容）" : message.content,
+                        themeManager: themeManager
+                    )
+                        .padding(12)
                         .background(themeManager.backgroundTertiary)
-                        .foregroundColor(themeManager.textPrimary)
                         .cornerRadius(12)
                 }
 
                 if let toolCalls = message.toolCalls, !toolCalls.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(toolCalls) { call in
-                            HStack(spacing: 4) {
-                                Image(systemName: "hammer.fill")
-                                    .font(.caption2)
-                                    .foregroundColor(themeManager.warning)
-                                Text("调用: \(call.function.name)")
-                                    .font(.caption2)
-                                    .foregroundColor(themeManager.textMuted)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 4)
+                    ToolCallsDisclosureView(
+                        toolCalls: toolCalls,
+                        themeManager: themeManager
+                    )
                 }
 
                 HStack(spacing: 6) {
@@ -1241,14 +1315,12 @@ struct StreamingMessageBubble: View {
                     ReasoningView(reasoning: reasoning, themeManager: themeManager)
                 }
 
-                let mdContent = markdownAttributedString(content.isEmpty ? "（生成中…）" : content, theme: themeManager)
-
-                Text(mdContent)
-                    .font(.system(size: 13))
-                    .lineSpacing(5)
-                    .padding(10)
+                MarkdownMessageView(
+                    content: content.isEmpty ? "（生成中…）" : content,
+                    themeManager: themeManager
+                )
+                    .padding(12)
                     .background(themeManager.backgroundTertiary)
-                    .foregroundColor(themeManager.textPrimary)
                     .cornerRadius(12)
 
                 if let toolCallName = toolCallName {
@@ -1274,6 +1346,36 @@ struct StreamingMessageBubble: View {
             }
             Spacer(minLength: 0)
         }
+    }
+}
+
+private struct MessageAttachmentSummary: View {
+    let files: [ReferencedFile]
+    @Bindable var themeManager: ThemeManager
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 5) {
+            Text("本轮已发送")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(themeManager.textMuted)
+
+            ForEach(files) { file in
+                HStack(spacing: 5) {
+                    Image(systemName: "doc.text.fill")
+                    Text((file.path as NSString).lastPathComponent)
+                        .lineLimit(1)
+                }
+                .font(.system(size: 10))
+                .foregroundStyle(themeManager.accentSecondary)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule()
+                        .fill(themeManager.accentSecondary.opacity(0.12))
+                )
+            }
+        }
+        .padding(.horizontal, 4)
     }
 }
 
@@ -1387,7 +1489,7 @@ struct ReasoningView: View {
                     Image(systemName: "brain")
                         .font(.caption2)
                         .foregroundColor(themeManager.accentSecondary)
-                    Text("思考过程")
+                    Text("过程摘要")
                         .font(.caption2)
                         .foregroundColor(themeManager.accentSecondary)
                 }
@@ -1397,13 +1499,48 @@ struct ReasoningView: View {
     }
 }
 
+private struct ToolCallsDisclosureView: View {
+    let toolCalls: [ToolCall]
+    @Bindable var themeManager: ThemeManager
+    @State private var isExpanded = false
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $isExpanded) {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(toolCalls) { call in
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.circle")
+                            .font(.caption2)
+                            .foregroundStyle(themeManager.success)
+                        Text(call.function.name)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(themeManager.textSecondary)
+                    }
+                }
+            }
+            .padding(.top, 6)
+            .padding(.leading, 4)
+        } label: {
+            Label(
+                "\(toolCalls.count) 次工具调用",
+                systemImage: "hammer"
+            )
+            .font(.caption2)
+            .foregroundStyle(themeManager.textMuted)
+        }
+        .padding(.horizontal, 4)
+    }
+}
+
 // MARK: - Conversation History
 
 struct ConversationHistoryView: View {
     @Bindable var agent: AIAgent
     @Bindable var themeManager: ThemeManager
+    let currentDocumentText: String
     @Environment(\.dismiss) var dismiss
     @State private var conversations: [Conversation] = []
+    @State private var scope: ConversationHistoryScope = .currentFile
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1412,6 +1549,15 @@ struct ConversationHistoryView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(themeManager.textPrimary)
                 Spacer()
+                Button {
+                    agent.startNewConversation(documentText: currentDocumentText)
+                    dismiss()
+                } label: {
+                    Label("新建对话", systemImage: "square.and.pencil")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(themeManager.accent)
+
                 Button("关闭") { dismiss() }
                     .keyboardShortcut(.escape, modifiers: [])
             }
@@ -1424,6 +1570,15 @@ struct ConversationHistoryView: View {
                     .foregroundColor(themeManager.border),
                 alignment: .bottom
             )
+
+            Picker("范围", selection: $scope) {
+                ForEach(ConversationHistoryScope.allCases) { item in
+                    Text(item.title).tag(item)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 10)
 
             if conversations.isEmpty {
                 Spacer()
@@ -1442,7 +1597,9 @@ struct ConversationHistoryView: View {
                             conversation: conversation,
                             agent: agent,
                             themeManager: themeManager,
-                            onContinue: { dismiss() }
+                            currentDocumentText: currentDocumentText,
+                            onContinue: { dismiss() },
+                            onDelete: { refresh() }
                         )
                     }
                 }
@@ -1452,8 +1609,20 @@ struct ConversationHistoryView: View {
         }
         .background(themeManager.backgroundPrimary)
         .onAppear {
-            conversations = ConversationHistoryService.shared.list()
+            if agent.currentFilePath == nil {
+                scope = .all
+            }
+            refresh()
         }
+        .onChange(of: scope) { _, _ in
+            refresh()
+        }
+    }
+
+    private func refresh() {
+        conversations = scope == .currentFile
+            ? agent.conversationsForCurrentFile()
+            : agent.allConversations()
     }
 }
 
@@ -1461,7 +1630,9 @@ struct ConversationRow: View {
     let conversation: Conversation
     @Bindable var agent: AIAgent
     @Bindable var themeManager: ThemeManager
+    let currentDocumentText: String
     let onContinue: () -> Void
+    let onDelete: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -1477,13 +1648,19 @@ struct ConversationRow: View {
             Spacer()
             HStack(spacing: 8) {
                 Button("继续") {
-                    agent.loadConversation(conversation)
+                    agent.loadConversation(
+                        conversation,
+                        currentDocumentText: currentDocumentText
+                    )
                     onContinue()
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
 
-                Button(action: { deleteConversation(conversation) }) {
+                Button(action: {
+                    deleteConversation(conversation)
+                    onDelete()
+                }) {
                     Image(systemName: "trash")
                         .foregroundColor(themeManager.error)
                 }
@@ -1502,6 +1679,20 @@ struct ConversationRow: View {
 
     private func deleteConversation(_ conversation: Conversation) {
         agent.deleteConversation(conversation)
+    }
+}
+
+private enum ConversationHistoryScope: String, CaseIterable, Identifiable {
+    case currentFile
+    case all
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .currentFile: return "当前文件"
+        case .all: return "全部对话"
+        }
     }
 }
 
@@ -1589,56 +1780,6 @@ extension AGUIEventType {
     }
 }
 
-private func markdownAttributedString(_ text: String, theme: ThemeManager) -> AttributedString {
-    guard !text.isEmpty else { return AttributedString(text) }
-    let formatted = formatMarkdownDisplay(text)
-    var options = AttributedString.MarkdownParsingOptions()
-    options.interpretedSyntax = .full
-    do {
-        var attributed = try AttributedString(markdown: formatted, options: options)
-        var container = AttributeContainer()
-        container.foregroundColor = theme.textPrimary
-        attributed.mergeAttributes(container)
-        return attributed
-    } catch {
-        return AttributedString(text)
-    }
-}
-
-/// 把模型常输出的「一行 Markdown」拆成可读结构：
-/// - 在标题、编号列表前补空行
-/// - 把显式换行保留为 Markdown 硬换行
-private func formatMarkdownDisplay(_ text: String) -> String {
-    var s = text.replacingOccurrences(of: "\r\n", with: "\n")
-
-    // 标题前补空行
-    s = s.replacingOccurrences(
-        of: #"([^\n])(#{1,6}\s)"#,
-        with: "$1\n\n$2",
-        options: .regularExpression
-    )
-
-    // 编号列表前补空行
-    s = s.replacingOccurrences(
-        of: #"([^\n])(?=(?:\d+\.\s))"#,
-        with: "$1\n\n",
-        options: .regularExpression
-    )
-
-    // 保留原有显式换行为硬换行（Markdown 中行尾两个空格）
-    var lines = s.components(separatedBy: "\n")
-    for i in 0..<lines.count - 1 {
-        let current = lines[i]
-        let next = lines[i + 1]
-        if !current.trimmingCharacters(in: .whitespaces).isEmpty,
-           !next.trimmingCharacters(in: .whitespaces).isEmpty,
-           !current.hasSuffix("  ") {
-            lines[i] = current + "  "
-        }
-    }
-    return lines.joined(separator: "\n")
-}
-
 struct AnnotationRow: View {
     let annotation: Annotation
     let path: String
@@ -1653,6 +1794,10 @@ struct AnnotationRow: View {
 
     private var anchorMatch: AnnotationMatch? {
         AnnotationLocator.locate(annotation, in: documentText)
+    }
+
+    private var hasValidAnchor: Bool {
+        annotation.pdfAnchor != nil || anchorMatch != nil
     }
 
     var body: some View {
@@ -1713,9 +1858,9 @@ struct AnnotationRow: View {
                     jumpToSource()
                 } label: {
                     HStack(alignment: .top, spacing: 7) {
-                        Image(systemName: anchorMatch == nil ? "link.badge.plus" : "quote.opening")
+                        Image(systemName: hasValidAnchor ? "quote.opening" : "link.badge.plus")
                             .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(anchorMatch == nil ? themeManager.warning : themeManager.annotationHighlight)
+                            .foregroundStyle(hasValidAnchor ? themeManager.annotationHighlight : themeManager.warning)
                             .padding(.top, 2)
 
                         Text(annotation.selectedText)
@@ -1731,14 +1876,14 @@ struct AnnotationRow: View {
                     .background(
                         RoundedRectangle(cornerRadius: 6)
                             .fill(
-                                (anchorMatch == nil ? themeManager.warning : themeManager.annotationHighlight)
+                                (hasValidAnchor ? themeManager.annotationHighlight : themeManager.warning)
                                     .opacity(0.08)
                             )
                     )
                 }
                 .buttonStyle(.plain)
-                .disabled(anchorMatch == nil)
-                .help(anchorMatch == nil ? "原文已变化，无法自动定位" : "跳转到原文")
+                .disabled(!hasValidAnchor)
+                .help(hasValidAnchor ? "跳转到原文" : "原文已变化，无法自动定位")
             }
 
             if isEditing {
@@ -1809,6 +1954,7 @@ struct AnnotationRow: View {
 
     private var statusTitle: String {
         if annotation.resolved { return "已解决" }
+        if let anchor = annotation.pdfAnchor { return "PDF 第 \(anchor.pageIndex + 1) 页" }
         if annotation.selectedText.isEmpty { return "全文意见" }
         guard let anchorMatch else { return "原文已变化" }
         return anchorMatch.quality == .exact ? "已定位" : "已重定位"
@@ -1816,11 +1962,15 @@ struct AnnotationRow: View {
 
     private var statusColor: Color {
         if annotation.resolved { return themeManager.success }
-        if !annotation.selectedText.isEmpty, anchorMatch == nil { return themeManager.warning }
+        if !annotation.selectedText.isEmpty, !hasValidAnchor { return themeManager.warning }
         return themeManager.annotationHighlight
     }
 
     private func jumpToSource() {
+        if let anchor = annotation.pdfAnchor {
+            NotificationCenter.default.post(name: .navigatePDFPage, object: anchor.pageIndex)
+            return
+        }
         NotificationCenter.default.post(name: .scrollEditorToAnnotation, object: annotation)
         NotificationCenter.default.post(name: .scrollPreviewToAnnotation, object: annotation)
     }
@@ -1922,4 +2072,5 @@ extension Notification.Name {
     static let focusAnnotation = Notification.Name("focusAnnotation")
     static let scrollEditorToAnnotation = Notification.Name("scrollEditorToAnnotation")
     static let scrollPreviewToAnnotation = Notification.Name("scrollPreviewToAnnotation")
+    static let navigatePDFPage = Notification.Name("navigatePDFPage")
 }

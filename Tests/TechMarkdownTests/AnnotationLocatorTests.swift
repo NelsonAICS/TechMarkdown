@@ -2,6 +2,23 @@ import XCTest
 @testable import TechMarkdown
 
 final class AnnotationLocatorTests: XCTestCase {
+    func testPDFAnchorSurvivesCodableRoundTrip() throws {
+        let annotation = Annotation(
+            text: "检查证据链",
+            selectedText: "实验结果",
+            context: "PDF 第 3 页",
+            pdfAnchor: PDFAnnotationAnchor(
+                pageIndex: 2,
+                bounds: [CGRect(x: 10, y: 20, width: 120, height: 18)]
+            )
+        )
+
+        let data = try JSONEncoder().encode(annotation)
+        let decoded = try JSONDecoder().decode(Annotation.self, from: data)
+
+        XCTAssertEqual(decoded.pdfAnchor, annotation.pdfAnchor)
+        XCTAssertEqual(decoded.pdfAnchor?.pageIndex, 2)
+    }
     func testExactSnapshotMatchUsesUTF16Range() {
         let annotation = Annotation(
             text: "需要解释",

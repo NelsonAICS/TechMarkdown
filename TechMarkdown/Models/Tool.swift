@@ -1,11 +1,31 @@
 import Foundation
 
+enum ToolRiskLevel: String, Codable {
+    case readOnly
+    case localStateChange
+    case documentProposal
+    case externalSideEffect
+}
+
 struct ToolDefinition: Identifiable, Hashable {
     let id = UUID()
     var name: String
     var description: String
     var parameters: [ToolParameter]
     var requiredParameters: [String]
+
+    var riskLevel: ToolRiskLevel {
+        switch name {
+        case "apply_markdown_edit", "apply_text_edit":
+            return .documentProposal
+        case "record_memory", "add_project_file_to_context":
+            return .localStateChange
+        case "web_search", "web_read":
+            return .readOnly
+        default:
+            return .readOnly
+        }
+    }
     
     var openAISchema: [String: Any] {
         var properties: [String: Any] = [:]

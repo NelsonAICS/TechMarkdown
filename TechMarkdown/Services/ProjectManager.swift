@@ -24,7 +24,7 @@ struct ProjectFile: Identifiable, Hashable {
         if isDirectory { return false }
         let ext = url.pathExtension.lowercased()
         let textExtensions: Set<String> = ["md", "markdown", "txt", "text", "tex", "swift", "py", "js", "ts", "json", "yml", "yaml", "xml", "html", "css", "sh"]
-        if textExtensions.contains(ext) { return true }
+        if textExtensions.contains(ext) || ext == "pdf" { return true }
         if let type = contentType {
             return type == .plainText || type == .markdown || type.conforms(to: .sourceCode) || type.conforms(to: .xml)
         }
@@ -367,6 +367,33 @@ final class ProjectManager {
                 ?? String(data: data.prefix(maxLength), encoding: .ascii)
                 ?? ""
             return text
+        }
+    }
+
+    /// 在安全作用域仍然有效时读取完整二进制数据。
+    /// PDFKit 会懒加载 URL，因此预览层必须持有数据，不能只依赖短暂授权的文件地址。
+    func readData(at path: String) async throws -> Data {
+        let url = URL(fileURLWithPath: path)
+        let scopedURL = findScopedRoot(for: url) ?? url
+        return try await withCheckedThrowingContinuation { continuation in
+            queue.async {
+                guard FileManager.default.fileExists(atPath: url.path) else {
+                    continuation.resume(throwing: ProjectManagerError.invalidPath)
+                    return
+                }
+
+                let didStart = scopedURL.startAccessingSecurityScopedResource()
+                defer {
+                    if didStart { scopedURL.stopAccessingSecurityScopedResource() }
+                }
+
+                do {
+                    let data = try Data(contentsOf: url, options: .mappedIfSafe)
+                    continuation.resume(returning: data)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
         }
     }
     

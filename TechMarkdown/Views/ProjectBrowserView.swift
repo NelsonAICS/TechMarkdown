@@ -485,7 +485,7 @@ struct ProjectBrowserView: View {
         guard !file.isDirectory else { return }
         selectedPath = file.path
         let ext = file.url.pathExtension.lowercased()
-        let textLikeExtensions: Set<String> = ["md", "markdown", "txt", "tex", "html", "htm"]
+        let textLikeExtensions: Set<String> = ["md", "markdown", "txt", "tex", "html", "htm", "pdf"]
         if textLikeExtensions.contains(ext) {
             onOpenTextFile(file)
         } else {
@@ -594,7 +594,6 @@ private struct RootRow: View {
                     Text(root.name)
                         .font(.system(size: 12, weight: .semibold))
                         .lineLimit(1)
-                        .help(root.url.path)
                     Spacer()
                 }
                 .padding(.horizontal, 12)
@@ -602,6 +601,7 @@ private struct RootRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .help(root.name)
             .background(selectedPath == root.url.path
                         ? Color.accentColor.opacity(0.15)
                         : (isHovered ? Color.gray.opacity(0.15) : Color.clear))
@@ -799,13 +799,13 @@ private struct FileRow: View {
                     Text(file.name)
                         .font(.system(size: 11))
                         .lineLimit(1)
-                        .help(file.name)
 
                     Spacer()
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .help(file.name)
             
             if file.isDirectory {
                 Button(action: onAddFolder) {

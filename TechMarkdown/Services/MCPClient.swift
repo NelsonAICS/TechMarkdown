@@ -233,6 +233,7 @@ final class MCPManager {
     var activeClients: [MCPClientProtocol] = []
     var discoveredTools: [ToolDefinition] = []
     var connectionErrors: [String: String] = [:]
+    private var toolClients: [String: MCPClientProtocol] = [:]
     
     private init() {
         loadSavedConfigurations()
@@ -266,6 +267,7 @@ final class MCPManager {
         activeClients.removeAll()
         discoveredTools.removeAll()
         connectionErrors.removeAll()
+        toolClients.removeAll()
         
         for config in configurations where config.isEnabled {
             guard let url = URL(string: config.endpoint) else {
@@ -283,6 +285,9 @@ final class MCPManager {
                 activeClients.append(client)
                 let tools = try await client.listTools()
                 discoveredTools.append(contentsOf: tools)
+                for tool in tools {
+                    toolClients[tool.name] = client
+                }
             } catch {
                 connectionErrors[config.name] = error.localizedDescription
                 print("MCP 连接失败 \(config.name): \(error)")
@@ -295,6 +300,7 @@ final class MCPManager {
               let url = URL(string: config.endpoint) else { return }
         
         activeClients.removeAll { $0.name == clientName }
+        toolClients = toolClients.filter { $0.value.name != clientName }
         connectionErrors[config.name] = nil
         
         let client = HTTPMCPClient(
@@ -308,8 +314,48 @@ final class MCPManager {
             activeClients.append(client)
             let tools = try await client.listTools()
             discoveredTools.append(contentsOf: tools)
+            for tool in tools {
+                toolClients[tool.name] = client
+            }
         } catch {
             connectionErrors[config.name] = error.localizedDescription
+        }
+    }
+
+    func execute(toolCall: ToolCall) async -> ToolResult {
+        guard let client = toolClients[toolCall.name] else {
+            return ToolResult(
+                toolCallID: toolCall.id,
+                name: toolCall.name,
+                output: "未找到可执行该工具的 MCP 服务：\(toolCall.name)",
+                isError: true
+            )
+        }
+        do {
+            guard
+                let data = toolCall.argumentsString.data(using: .utf8),
+                let arguments = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else {
+                return ToolResult(
+                    toolCallID: toolCall.id,
+                    name: toolCall.name,
+                    output: "无法解析 MCP 工具参数",
+                    isError: true
+                )
+            }
+            let output = try await client.callTool(name: toolCall.name, arguments: arguments)
+            return ToolResult(
+                toolCallID: toolCall.id,
+                name: toolCall.name,
+                output: output
+            )
+        } catch {
+            return ToolResult(
+                toolCallID: toolCall.id,
+                name: toolCall.name,
+                output: "MCP 工具执行错误：\(error.localizedDescription)",
+                isError: true
+            )
         }
     }
 }
