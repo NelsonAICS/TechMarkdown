@@ -78,3 +78,31 @@ protocol ToolExecutable: AnyObject {
     var definition: ToolDefinition { get }
     func execute(arguments: [String: Any]) async throws -> String
 }
+
+/// Agent 的最终工具权限边界。意图模型只能提供排序建议，不能开放写入能力。
+enum AgentToolPolicy {
+    static func resolve(
+        _ tools: [ToolDefinition],
+        preferredTools: [String],
+        restrictTools: Bool,
+        allowsDocumentProposal: Bool
+    ) -> [ToolDefinition] {
+        var resolved = allowsDocumentProposal
+            ? tools
+            : tools.filter { $0.riskLevel != .documentProposal }
+
+        if restrictTools {
+            let allowedNames = Set(preferredTools)
+            resolved = resolved.filter { allowedNames.contains($0.name) }
+        } else if !preferredTools.isEmpty {
+            let preferredNames = Set(preferredTools)
+            resolved.sort {
+                let first = preferredNames.contains($0.name)
+                let second = preferredNames.contains($1.name)
+                return first != second ? first : $0.name < $1.name
+            }
+        }
+
+        return resolved
+    }
+}

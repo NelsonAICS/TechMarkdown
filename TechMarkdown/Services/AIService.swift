@@ -260,6 +260,16 @@ final class AIService {
         </本轮上下文规则>
         """
 
+        if !tools.contains(where: { $0.riskLevel == .documentProposal }) {
+            systemPrompt += """
+
+            <本轮操作权限>
+            本轮是只读任务。请在对话中直接给出总结、简介、提纲、润色稿、译文或分析结果。
+            不得声称已经修改文档，也不得尝试调用或伪造任何文档修改工具。
+            </本轮操作权限>
+            """
+        }
+
         if currentFilePath?.lowercased().hasSuffix(".pdf") == true {
             systemPrompt += """
 

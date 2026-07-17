@@ -385,6 +385,9 @@ final class AIAgent {
                 documentText: documentText,
                 preferredTools: skill.suggestedTools,
                 restrictTools: true,
+                allowsDocumentProposal: skill.suggestedTools.contains {
+                    $0 == "apply_markdown_edit" || $0 == "apply_text_edit"
+                },
                 selectedSnippets: snippets,
                 referencedFiles: referenceSnapshot,
                 annotations: annotations
@@ -418,7 +421,17 @@ final class AIAgent {
                 if !unresolvedCalls.isEmpty {
                     self.transitionCurrentRun(to: .executingTool, expectedRunID: run.id)
                     self.state = .executingTools
-                    try await self.executeToolCallsSequentially(unresolvedCalls, runID: run.id)
+                    let resumedTools = AgentToolPolicy.resolve(
+                        ToolRegistry.shared.allDefinitions + self.mcpManager.discoveredTools,
+                        preferredTools: self.lastIntentClassification?.preferredTools ?? [],
+                        restrictTools: false,
+                        allowsDocumentProposal: self.lastIntentClassification?.allowsDocumentProposal ?? false
+                    )
+                    try await self.executeToolCallsSequentially(
+                        unresolvedCalls,
+                        runID: run.id,
+                        allowedToolNames: Set(resumedTools.map(\.name))
+                    )
                 }
                 let annotations = AnnotationService.shared.unresolvedAnnotations(for: self.currentFilePath)
                 let referenceSnapshot = self.messages
@@ -498,8 +511,8 @@ final class AIAgent {
         let intentStepID = appendStep(
             runID: run.id,
             kind: .intent,
-            title: "识别任务意图",
-            detail: "正在判断是否需要检索、阅读或修改文档"
+            title: "识别任务目标与操作边界",
+            detail: "正在判断任务目标、输出位置以及是否允许生成文档修改建议"
         )
         let intent = await IntentRecognitionService.shared.classify(
             text: cleanText,
@@ -518,9 +531,13 @@ final class AIAgent {
             id: intentStepID,
             status: .completed,
             detail: """
-            识别结果：\(intent.intent.displayName)
+            任务目标：\(intent.goal.displayName)
+            工具路由：\(intent.intent.displayName)
+            输出位置：\(intent.output.displayName)
+            修改权限：\(intent.mutationPolicy.displayName)
             置信度：\(Int(intent.confidence * 100))%
             判断依据：\(intent.reason)
+            识别证据：\(intent.evidence.isEmpty ? "未发现明确写回指令，采用只读默认值" : intent.evidence.joined(separator: "、"))
             建议工具：\(intent.preferredTools.isEmpty ? "无需工具，直接基于资料回答" : intent.preferredTools.joined(separator: "、"))
             """,
             endedAt: Date()
@@ -531,6 +548,7 @@ final class AIAgent {
             runID: run.id,
             documentText: documentText,
             preferredTools: intent.confidence >= 0.6 ? intent.preferredTools : [],
+            allowsDocumentProposal: intent.allowsDocumentProposal,
             selectedSnippets: selectedSnippets,
             referencedFiles: referenceSnapshot,
             annotations: annotations
@@ -556,6 +574,7 @@ final class AIAgent {
         documentText: String,
         preferredTools: [String] = [],
         restrictTools: Bool = false,
+        allowsDocumentProposal: Bool = false,
         selectedSnippets: [SelectedTextSnippet],
         referencedFiles: [ReferencedFile],
         annotations: [Annotation] = []
@@ -566,19 +585,12 @@ final class AIAgent {
         eventBus.startRun(threadId: threadId, runId: runID.uuidString)
         UserDefaults.standard.set(documentText, forKey: "techmarkdown.currentDocumentText")
 
-        var availableTools = ToolRegistry.shared.allDefinitions + mcpManager.discoveredTools
-        if !preferredTools.isEmpty {
-            if restrictTools {
-                availableTools = availableTools.filter { preferredTools.contains($0.name) }
-            } else {
-                let preferredSet = Set(preferredTools)
-                availableTools.sort {
-                    let first = preferredSet.contains($0.name)
-                    let second = preferredSet.contains($1.name)
-                    return first != second ? first : $0.name < $1.name
-                }
-            }
-        }
+        let availableTools = AgentToolPolicy.resolve(
+            ToolRegistry.shared.allDefinitions + mcpManager.discoveredTools,
+            preferredTools: preferredTools,
+            restrictTools: restrictTools,
+            allowsDocumentProposal: allowsDocumentProposal
+        )
 
         do {
             transitionCurrentRun(to: .generating, expectedRunID: runID)
@@ -679,7 +691,11 @@ final class AIAgent {
             updateRunCounters(modelRoundCount: round, toolCallCount: totalToolCalls)
             transitionCurrentRun(to: .executingTool, expectedRunID: runID)
             state = .executingTools
-            try await executeToolCallsSequentially(toolCalls, runID: runID)
+            try await executeToolCallsSequentially(
+                toolCalls,
+                runID: runID,
+                allowedToolNames: Set(tools.map(\.name))
+            )
             if pendingEdit != nil {
                 return
             }
@@ -703,6 +719,7 @@ final class AIAgent {
         var streamingToolCalls: [String: StreamingToolCallAccumulator] = [:]
         var reasoningSignalCharacterCount = 0
         var lastVisibleUpdate = Date.distantPast
+        let allowedToolNames = Set(tools.map(\.name))
         let lastUserText = messages.last(where: { $0.role == .user })?.content ?? ""
         let contextResolution = AIContextResolver.resolve(
             userText: lastUserText,
@@ -777,6 +794,18 @@ final class AIAgent {
                     currentStreamingReasoning = "正在核对分析对象、资料依据与回答结构…"
                 case .toolCallStart:
                     if let payload = event.payload as? ToolCallStartPayload {
+                        guard allowedToolNames.contains(payload.toolCallName) else {
+                            activeToolStepIDs[payload.toolCallId] = appendStep(
+                                runID: runID,
+                                kind: .toolCall,
+                                status: .failed,
+                                title: "已阻止未授权工具调用",
+                                detail: "本轮操作边界不允许调用 \(payload.toolCallName)",
+                                toolName: payload.toolCallName,
+                                endedAt: Date()
+                            )
+                            break
+                        }
                         streamingToolCalls[payload.toolCallId] = StreamingToolCallAccumulator(
                             id: payload.toolCallId,
                             name: payload.toolCallName
@@ -875,6 +904,9 @@ final class AIAgent {
 
         if let dsmlCalls = parseDSMLToolCalls(from: streamedContent), !dsmlCalls.isEmpty {
             let mappedToolCalls = dsmlCalls.compactMap { dsmlCall -> ToolCall? in
+                guard allowedToolNames.contains(dsmlCall.name) else {
+                    return nil
+                }
                 var arguments = dsmlCall.arguments
                 if dsmlCall.name == "apply_markdown_edit" {
                     if let edit = arguments["edit"] {
@@ -912,7 +944,11 @@ final class AIAgent {
             let (prefix, _) = splitDSMLBlock(from: streamedContent)
             let cleanPrefix = prefix.trimmingCharacters(in: .whitespacesAndNewlines)
             let toolNames = mappedToolCalls.map(\.name).joined(separator: ", ")
-            if mappedToolCalls.allSatisfy({ $0.name == "apply_markdown_edit" }) && cleanPrefix.isEmpty {
+            if mappedToolCalls.isEmpty {
+                streamedContent = cleanPrefix.isEmpty
+                    ? "本轮为只读任务，未执行未经授权的文档操作，原文保持不变。"
+                    : cleanPrefix
+            } else if mappedToolCalls.allSatisfy({ $0.name == "apply_markdown_edit" }) && cleanPrefix.isEmpty {
                 streamedContent = "已生成文档修改建议，请在侧边栏确认应用。"
             } else if cleanPrefix.isEmpty {
                 streamedContent = "正在执行工具：\(toolNames)…"
@@ -934,7 +970,11 @@ final class AIAgent {
         return parsedToolCalls
     }
 
-    private func executeToolCallsSequentially(_ toolCalls: [ToolCall], runID: UUID) async throws {
+    private func executeToolCallsSequentially(
+        _ toolCalls: [ToolCall],
+        runID: UUID,
+        allowedToolNames: Set<String>
+    ) async throws {
         for toolCall in toolCalls {
             try Task.checkCancellation()
             let stepID = activeToolStepIDs[toolCall.id] ?? appendStep(
@@ -949,6 +989,25 @@ final class AIAgent {
                 status: .running,
                 detail: "正在执行 · \(summarizeToolArguments(name: toolCall.name, arguments: toolCall.argumentsString))"
             )
+
+            guard allowedToolNames.contains(toolCall.name) else {
+                let detail = "已阻止：本轮操作边界不允许调用 \(toolCall.name)"
+                messages.append(
+                    ChatMessage(
+                        role: .tool,
+                        content: detail,
+                        toolCallID: toolCall.id,
+                        runID: runID
+                    )
+                )
+                updateStep(
+                    id: stepID,
+                    status: .failed,
+                    detail: detail,
+                    endedAt: Date()
+                )
+                continue
+            }
 
             let result: ToolResult
             if ToolRegistry.shared.containsTool(named: toolCall.name) {
