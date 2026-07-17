@@ -118,7 +118,7 @@ TechMarkdown/
 │   │   └── preview-template.html   # 预览 HTML 模板
 │   ├── Info.plist                  # 文件类型声明
 │   └── TechMarkdown.entitlements   # 沙盒与网络权限
-└── docs/                           # 详细项目文档（面试用）
+└── docs/                           # 详细项目文档
 ```
 
 ## AI Agent 功能
@@ -131,7 +131,7 @@ TechMarkdown/
 - **Tool Use / Function Calling**：内置 read_file、list_directory、search_in_document、apply_markdown_edit 工具。
 - **MCP 扩展**：可接入外部 MCP Server，扩展 AI 能力。
 
-详细的架构设计、技术决策、问题与解决方案、面试问答请见 [`docs/`](docs/) 目录。
+详细的架构设计、技术决策、问题与解决方案请见 [`docs/`](docs/) 目录。
 
 ## 键盘快捷键
 
